@@ -27,7 +27,8 @@ from . import claude, config, db, images
 
 UA = "Mozilla/5.0 (compatible; AnimalPick/0.1; local editorial tool)"
 
-# 2026-11-22 실측으로 작동·동물 기사 확인된 피드만 (EurekAlert·정책브리핑은 404, Google 뉴스는 이용 조건 불명확)
+# 2026-11-22 실측으로 작동·동물 기사 확인된 피드만 (EurekAlert·정책브리핑·한겨레 애니멀피플·KBS RSS 는 404,
+# Google 뉴스는 이용 조건 불명확, 네이버 검색 API 는 신규 앱에서 선택 불가로 확인됨 — 키가 이미 있을 때만 사용)
 FEEDS = [
     ("news_intl", "Phys.org 동식물", "https://phys.org/rss-feed/biology-news/plants-animals/"),
     ("news_intl", "Phys.org 생태", "https://phys.org/rss-feed/biology-news/ecology/"),
@@ -42,6 +43,7 @@ FEEDS = [
     ("news_intl", "BBC 과학·환경", "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml"),
     ("news_intl", "Smithsonian 과학·자연", "https://www.smithsonianmag.com/rss/science-nature/"),
     ("news_kr", "연합뉴스 사회", "https://www.yna.co.kr/rss/society.xml"),
+    ("news_kr", "뉴스펭귄", "https://www.newspenguin.com/rss/allArticle.xml"),  # 환경·멸종위기종 전문, 주 7건 안팎
 ]
 NAVER_QUERIES = ["멸종위기 동물", "야생동물 발견", "동물원 새끼", "동물 구조", "신종 발견", "철새", "고래 돌고래", "희귀 동물"]
 

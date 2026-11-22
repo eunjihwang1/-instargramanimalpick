@@ -153,7 +153,7 @@ async function renderCandidates() {
       </div>
     </div>
     <div class="muted" style="margin-top:6px">하루 구성: ${mix}. ★ 표시는 이 구성대로 자동 선정된 후보입니다. 원고는 '검수 대기'로 쌓이고, 승인 없이는 게시되지 않습니다.
-      ${s.naver ? "" : "<br>국내 뉴스는 지금 연합뉴스만 수집 중입니다 (네이버 뉴스 키 없음)."}</div>
+      <br>국내 뉴스: 연합뉴스·뉴스펭귄${s.naver ? "·네이버 뉴스" : ""}. 국내 후보가 모자라면 그 자리는 다른 후보 상위로 채웁니다.</div>
     ${jobLine}
     ${cands.map((c, i) => `<div class="cand ${c.daily_pick ? "pick" : ""}">
       <div class="row" style="justify-content:space-between">
