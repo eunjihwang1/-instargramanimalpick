@@ -10,6 +10,7 @@
 | 2026-11-22 14:23 | v27.0 | Business Discovery 필드 실측 (게시물 3개) | 성공 | 기본 필드 전부 있음. `view_count` 는 **VIDEO 만**(캐러셀 0/3). `media_url` 3/3, `children{media_type,media_url}` 3/3, `thumbnail_url` 0/3 | 문서와 달리 캐러셀 조회수는 받을 수 없음 → 캐러셀 성과는 좋아요·댓글로 비교 |
 | 2026-11-22 14:30 | v27.0 | 토큰 교환 (fb_exchange_token → /me/accounts) | 성공 | 페이지 토큰 type=PAGE, **만료 없음(expires_at=0)**, 권한에 instagram_content_publish 포함 | 첫 토큰엔 게시 권한이 빠져 탐색기에서 다시 골라 재발급 |
 | 2026-11-22 14:30 | v27.0 | `GET /{ig}/content_publishing_limit` (페이지 토큰) | 성공 | quota_usage 0, **quota_total 100 / 86400초** | 문서의 100 vs 50 상충 → 실제 계정 한도는 100. 우리 안전 한도는 50 유지 |
+| 2026-11-22 14:55 | v27.0 | **첫 실제 캐러셀 게시** (사용자가 대시보드에서 실행) | 성공 | 2장 캐러셀, https://www.instagram.com/p/DgCGl9RjwkZ/ | 이미지는 Cloudflare 임시 주소로 전달 → Instagram 이 정상 수신, 게시 후 주소 닫힘 |
 
 ## 결론
 - Phase 1 완료 기준(실제 API 응답으로 다른 계정 게시물 조회·저장) 충족.
