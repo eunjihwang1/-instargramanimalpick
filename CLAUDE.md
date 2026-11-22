@@ -16,11 +16,17 @@
 - 대시보드는 한 번에 하나만 뜬다(포트 3800 독점). 새 코드 반영하려면 기존 창을 닫고 다시 실행.
 - `tools/cloudflared.exe` 는 Git 에 없다. 새 PC 에서는 cloudflare/cloudflared 공식 릴리스에서 받아 서명 확인 후 tools/ 에 둔다.
 
+## 주제 소싱 (animalpick/sources.py)
+- 수집처는 2026-11-22 실측으로 작동 확인한 RSS 만 (FEEDS). 기사는 주제 선정·사실 확인에만, 문장·사진 사용 금지.
+- 'needs_event_photo'(그 개체 사진이 꼭 필요한 이야기)와 사진 0장 후보는 제외. 하루 구성 DAILY_MIX 해외5·국내2·상시3.
+- 한국어 키워드 필터는 부분 문자열 오인('봉사자'의 '사자')에 주의.
+
 ## 명령
 ```powershell
 python -B -m unittest discover -s tests -v
 python scripts/meta_probe.py whoami | pages
 python scripts/meta_probe.py discovery --handle heodukgoo --limit 10 --save
+python scripts/collect_topics.py [--auto-draft]   # 오늘의 후보 수집 (+ 하루 구성대로 원고 생성)
 ```
 
 AI 분석 단계(Phase 3~)는 `어치` 의 다른 프로젝트처럼 Claude 구독 인증(Agent SDK, API 키 환경변수 삭제)을 쓴다.

@@ -11,7 +11,8 @@ import sys
 import traceback
 from urllib.parse import urlparse
 
-from . import claude, config, drafts, token_setup, tunnel
+from . import claude, config, db, drafts, sources, token_setup, tunnel
+import threading
 
 PORT = 3800
 PUBLIC = config.ROOT / "public"
@@ -27,8 +28,63 @@ def status() -> dict:
         "media_repo": tunnel.CLOUDFLARED.exists() if config.env("MEDIA_HOSTING") != "github" else bool(config.env("MEDIA_GITHUB_REPO")),
         "pexels": bool(config.env("PEXELS_API_KEY")),
         "pixabay": bool(config.env("PIXABAY_API_KEY")),
+        "naver": bool(config.env("NAVER_CLIENT_ID") and config.env("NAVER_CLIENT_SECRET")),
         "checklist": drafts.CHECKLIST,
     }
+
+
+class Job:
+    """오래 걸리는 작업(후보 수집·원고 일괄 생성)을 백그라운드에서 한 번에 하나만."""
+    lock = threading.Lock()
+    state = {"running": False, "name": "", "log": [], "result": None, "error": None}
+
+    @classmethod
+    def start(cls, name: str, fn) -> bool:
+        if not cls.lock.acquire(blocking=False):
+            return False
+        cls.state = {"running": True, "name": name, "log": [], "result": None, "error": None}
+
+        def run():
+            try:
+                cls.state["result"] = fn(cls.state["log"].append)
+            except Exception as exc:
+                cls.state["error"] = str(exc)
+            finally:
+                cls.state["running"] = False
+                cls.lock.release()
+        threading.Thread(target=run, daemon=True).start()
+        return True
+
+
+def _collect_job(log):
+    conn = db.connect(config.DB_PATH)
+    try:
+        return sources.collect(conn=conn, log=log)
+    finally:
+        conn.close()
+
+
+def _auto_draft_job(log):
+    conn = db.connect(config.DB_PATH)
+    try:
+        picks = sources.pick_daily(sources.list_candidates(conn, days=2))
+        log(f"하루 구성대로 {len(picks)}개 원고 생성 시작")
+        return {"drafts": sources.make_drafts(picks, conn=conn, log=log)}
+    finally:
+        conn.close()
+
+
+def candidates_payload() -> dict:
+    conn = db.connect(config.DB_PATH)
+    try:
+        cands = sources.list_candidates(conn, days=3)
+        picks = {c["id"] for c in sources.pick_daily(cands)}
+        for c in cands:
+            c["daily_pick"] = c["id"] in picks
+        excluded = [c for c in sources.list_candidates(conn, days=3, include_excluded=True) if c["status"] == "excluded"]
+        return {"candidates": cands, "excluded": excluded[:40], "mix": sources.DAILY_MIX}
+    finally:
+        conn.close()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -66,6 +122,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(status())
         if path == "/api/drafts":
             return self.send_json(drafts.list_all())
+        if path == "/api/candidates":
+            return self.send_json(candidates_payload())
+        if path == "/api/job":
+            return self.send_json(Job.state)
         m = re.fullmatch(r"/media/([0-9a-f-]+)/((?:slide|img)_\d{2}\.jpg)", path)
         if m:
             return self.send_file(drafts.draft_dir(m.group(1)) / m.group(2))
@@ -90,6 +150,28 @@ class Handler(BaseHTTPRequestHandler):
                                                     data.get("source_text", "")))
             if method == "POST" and path == "/api/setup-token":
                 return self.send_json({"lines": token_setup.run()})
+            if method == "POST" and path in ("/api/candidates/collect", "/api/candidates/auto-draft"):
+                config.load_env(override=True)
+                name, fn = (("후보 수집", _collect_job) if path.endswith("collect") else ("원고 일괄 생성", _auto_draft_job))
+                if not Job.start(name, fn):
+                    return self.send_json({"error": f"'{Job.state['name']}' 작업이 아직 진행 중입니다"}, 409)
+                return self.send_json({"started": name})
+            mc = re.fullmatch(r"/api/candidates/([0-9a-f]{12})/(draft|dismiss)", path)
+            if method == "POST" and mc:
+                conn = db.connect(config.DB_PATH)
+                try:
+                    found = sources.rows(conn, "id = ?", (mc.group(1),))
+                    if not found:
+                        return self.send_json({"error": "후보를 찾을 수 없습니다"}, 404)
+                    if mc.group(2) == "dismiss":
+                        sources.set_status(conn, mc.group(1), "dismissed")
+                        return self.send_json({"ok": True})
+                    made = sources.make_drafts(found, conn=conn)
+                    if not made:
+                        return self.send_json({"error": "원고를 만들지 못했습니다"}, 400)
+                    return self.send_json(drafts.load(made[0]))
+                finally:
+                    conn.close()
             m = re.fullmatch(r"/api/drafts/([0-9a-f-]+)(?:/(\w+))?", path)
             if not m:
                 return self.send_json({"error": "없는 주소"}, 404)

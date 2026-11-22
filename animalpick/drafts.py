@@ -148,7 +148,8 @@ def create(topic: str, source_url: str = "", source_text: str = "", *, write=wri
         "input": {"topic": topic, "source_url": source_url, "has_source_text": bool(source_text.strip())},
         **content,
         "checklist": {k: False for k in CHECKLIST},
-        "duplicate_of": dup, "warnings": [], "history": [{"at": now(), "event": "created"}],
+        "duplicate_of": dup, "warnings": list(content.get("warnings", [])),
+        "history": [{"at": now(), "event": "created"}],
         "publish": None, "scheduled_at": None,
     }
     if dup:

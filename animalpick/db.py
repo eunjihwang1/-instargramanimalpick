@@ -10,6 +10,27 @@ from pathlib import Path
 import sqlite3
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS candidates (
+    id            TEXT PRIMARY KEY,          -- 링크 기반 해시
+    kind          TEXT NOT NULL,             -- news_intl / news_kr / evergreen
+    source        TEXT NOT NULL,
+    title         TEXT NOT NULL,             -- 원제
+    title_key     TEXT NOT NULL,             -- 중복 판별용 정규화 제목
+    link          TEXT NOT NULL,
+    published_at  TEXT,
+    collected_at  TEXT NOT NULL,
+    ko_title      TEXT,
+    subject       TEXT,
+    photo_query   TEXT,
+    scores        TEXT,                      -- JSON (항목별 1~5)
+    score         REAL,
+    photos        INTEGER,                   -- 사전 확인한 사용 가능 사진 수 (NULL=미확인)
+    status        TEXT NOT NULL DEFAULT 'new',  -- new / excluded / drafted / dismissed
+    reason        TEXT,
+    draft_id      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_candidates_title_key ON candidates(title_key);
+
 CREATE TABLE IF NOT EXISTS reference_accounts (
     username         TEXT PRIMARY KEY,
     ig_id            TEXT,

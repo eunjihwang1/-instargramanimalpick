@@ -115,6 +115,39 @@ class WriterTests(unittest.TestCase):
         d = writer.write_draft("주제", "https://blocked", "", asker=fake_asker, fetcher=boom)
         self.assertEqual(d["fact_status"], "unverified")
 
+    def test_fetch_failure_retried_and_warned(self):
+        calls = []
+
+        def flaky(_u):
+            calls.append(1)
+            if len(calls) == 1:
+                raise OSError("timeout")
+            return "본문"
+        d = writer.write_draft("주제", "https://x", "", asker=fake_asker, fetcher=flaky, sleep=lambda s: None)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(d["fact_status"], "sourced")
+
+        def boom(_u):
+            raise OSError("blocked")
+        d2 = writer.write_draft("주제", "https://x", "", asker=fake_asker, fetcher=boom, sleep=lambda s: None)
+        self.assertTrue(any("출처 페이지를 읽지 못했습니다" in w for w in d2["warnings"]))
+
+    def test_style_issues(self):
+        cap = "무엇일까요?\n\n답은 돌입니다. 펭귄은 돌을 모은다.\n\n정말 놀랍습니까?\n\n출처: 위키백과"
+        bad = writer.style_issues(cap)
+        self.assertEqual(len(bad), 2)  # '-까요' 와 '-다' 만 (니다·니까·출처 줄은 통과)
+
+    def test_wikipedia_uses_api_extract(self):
+        seen = []
+
+        def opener(req, timeout):
+            seen.append(req.full_url)
+            return FakeResponse(json.dumps({"query": {"pages": [{"title": "Common wombat", "extract": "Wombats produce cube-shaped faeces."}]}}).encode())
+        t = writer.fetch_source_text("https://en.wikipedia.org/wiki/Common_wombat", opener)
+        self.assertIn("cube-shaped", t)
+        self.assertIn("action=query", seen[0])
+        self.assertIn("Common+wombat", seen[0])
+
     def test_html_to_text(self):
         t = writer.html_to_text("<html><title>제목</title><script>x()</script><p>본문 &amp; 내용</p></html>")
         self.assertIn("제목", t)
