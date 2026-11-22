@@ -109,9 +109,27 @@ def attach_images(draft: dict, out_dir: Path, *, finder=images.search, downloade
         q = slide.get("image_query", "")
         if not q or slide["kind"] == "end":
             continue
-        # 그 장의 검색어 → 표지 검색어 → 주인공 동물 이름만으로 넓게. 아직 안 쓴 사진만.
-        pool = [c for c in candidates(q) + candidates(cover_q) + (candidates(subject) if subject else [])
-                if c["page_url"] not in used]
+        if slide["kind"] == "key":
+            # 핵심 장면 사진: 그 검색어 결과 중 '핵심 단어 + 동물 이름'이 제목·태그에 모두 있는 것만. 대체 검색 없음.
+            # 검색어 하나로 안 나오면 '동물 이름 + 핵심 단어' 로 몇 번 더 (예: wombat faeces)
+            last = subject.split()[-1] if subject.split() else ""
+            queries = [q] + ([f"{last} {t}" for t in slide.get("must_match", [])[:3]] if last else [])
+            pool, seen_urls = [], set()
+            for qq in dict.fromkeys(queries):
+                for c in candidates(qq):
+                    if (c["page_url"] not in used and c["page_url"] not in seen_urls
+                            and images.matches_key(c, slide.get("must_match", []), subject)):
+                        pool.append(c)
+                        seen_urls.add(c["page_url"])
+                if pool:
+                    break
+        else:
+            # 표지: 그 장의 검색어 → 주인공 동물 이름만으로 넓게. 아직 안 쓴 사진만.
+            # 위키미디어(출처·촬영 정보가 분명한 실제 사진)를 먼저, 사진 사이트(AI 이미지가 섞여 있음)는 나중에.
+            allc = [c for c in candidates(q) + candidates(cover_q) + (candidates(subject) if subject else [])
+                    if c["page_url"] not in used]
+            pool = ([c for c in allc if c.get("source") not in images.STOCK_SOURCES] +
+                    [c for c in allc if c.get("source") in images.STOCK_SOURCES])
         attached, last_err = False, None
         for pick in pool[:2]:  # 받기 실패하면 다음 후보 하나 더
             if pick.get("original_bytes") and pick["original_bytes"] > images.MAX_BYTES:
@@ -132,9 +150,16 @@ def attach_images(draft: dict, out_dir: Path, *, finder=images.search, downloade
             break
         if not attached:
             reason = f"사진 받기 실패 ({last_err})" if last_err else "쓸 수 있는 사진 없음"
-            warn(f"{i}장: {reason} → 글자 중심으로 만듦 (나중에 직접 사진 교체 가능)")
+            if slide["kind"] == "key":
+                warn(f"핵심 사진 '{slide.get('headline', '')}': {reason} → 이 사진 없이 만듦")
+            else:
+                warn(f"표지: {reason} → 2장째는 글자 장으로 만듦 (나중에 직접 사진 교체 가능)")
     if dropped:
         warn(f"'{subject}' 와 태그가 맞지 않는 사진 사이트 사진 {dropped}장을 걸러냈습니다 (다른 동물일 수 있음)")
+    stock = [s for s in draft["slides"] if (s.get("image") or {}).get("source") in images.STOCK_SOURCES]
+    if stock:
+        warn(f"사진 사이트 사진 {len(stock)}장 사용: AI 로 만든 이미지가 섞여 있을 수 있습니다. "
+             "'원본 보기'로 AI 생성 표시가 없는지, 실제 그 동물·장소가 맞는지 꼭 확인하세요")
 
 
 def create(topic: str, source_url: str = "", source_text: str = "", *, write=writer.write_draft,

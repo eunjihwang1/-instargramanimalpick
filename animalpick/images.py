@@ -55,6 +55,17 @@ def strip_html(text: str) -> str:
     return html.unescape(re.sub(r"<[^>]+>", "", text or "")).strip()
 
 
+def clean_author(name: str) -> str:
+    """위키미디어 Artist 칸은 같은 이름이 두 번 붙어 오기도 한다 ('Unknown authorUnknown author')."""
+    name = re.sub(r"\s+", " ", name).strip()
+    half = len(name) // 2
+    if name and len(name) % 2 == 0 and name[:half] == name[half:]:
+        name = name[:half]
+    if not name or name.lower() in ("unknown author", "unknown"):
+        return "작자 미상"
+    return name[:80]
+
+
 def search_commons(query: str, *, limit: int = 15, opener=urlopen) -> list[dict]:
     """위키미디어 공용: 조건(라이선스·크기·형식)에 맞는 후보를 품질 순으로 반환."""
     if not query.strip():
@@ -83,7 +94,7 @@ def search_commons(query: str, *, limit: int = 15, opener=urlopen) -> list[dict]
             "original_url": info.get("url"),
             "original_bytes": info.get("size"),
             "page_url": info.get("descriptionurl", ""),
-            "author": strip_html((meta.get("Artist") or {}).get("value", ""))[:80] or "작자 미상",
+            "author": clean_author(strip_html((meta.get("Artist") or {}).get("value", ""))),
             "license": lic,
             "license_url": (meta.get("LicenseUrl") or {}).get("value", ""),
             "width": info.get("width"), "height": info.get("height"),
@@ -198,15 +209,59 @@ def is_sensitive(item: dict) -> bool:
     return bool(_words(item.get("title", "")) & SENSITIVE_WORDS)
 
 
+# 사진 사이트에는 AI 생성 그림·일러스트가 '사진' 으로 섞여 있다 (2026-11-22 우파루파 표지에서 실제로 발생).
+# 실제 동물 이야기에 창작 그림을 쓰면 안 되므로 이런 태그가 하나라도 있으면 뺀다.
+ART_WORDS = {"ai", "generated", "midjourney", "fantasy", "drawing", "illustration", "digital", "art", "artwork",
+             "render", "rendering", "cgi", "cartoon", "painting", "fairy", "fairytale", "surreal", "imagination",
+             "magic", "magical", "creature", "dreamy", "concept"}
+
+
+def is_artwork(item: dict) -> bool:
+    if item.get("source") not in STOCK_SOURCES:
+        return False  # 위키미디어의 옛 그림·도판은 출처·설명이 분명하다
+    title = item.get("title", "").lower()
+    return bool(_words(title) & ART_WORDS) or "3d" in title
+
+
 def matches_subject(item: dict, subject: str) -> bool:
     """일반 사진 사이트(Pexels/Pixabay) 사진은 태그·설명에 주인공 동물 이름이 모두 있어야 통과.
-    위키미디어는 검색 자체가 파일 제목 기준이라 그대로 둔다. 불편한 사진은 출처와 관계없이 제외."""
-    if is_sensitive(item):
+    위키미디어는 검색 자체가 파일 제목 기준이라 그대로 둔다. 불편한 사진·AI 그림은 제외."""
+    if is_sensitive(item) or is_artwork(item):
         return False
     if item.get("source") not in STOCK_SOURCES or not subject.strip():
         return True
     need = _words(subject)
     return bool(need) and need <= _words(item.get("title", ""))
+
+
+GENERIC_MODIFIERS = {"common", "european", "american", "african", "asian", "northern", "southern", "eastern",
+                     "western", "greater", "lesser", "little", "great", "giant", "wild", "bare", "nosed"}
+
+
+def matches_key(item: dict, must_match: list[str], subject: str) -> bool:
+    """핵심 장면 사진: 제목·태그에 핵심 단어 하나 이상 + 주인공 동물 이름의 핵심 단어가 있어야 한다.
+    (예: 'File:Wombat scat cube.jpg' → scat + wombat). 어느 출처든 같은 기준. 불편한 사진은 제외."""
+    if is_sensitive(item) or is_artwork(item) or not must_match:
+        return False
+    words = _words(item.get("title", ""))
+    terms = _words(" ".join(must_match))
+    # 'poo' 로 'poop' 도 잡는다 (한 글자 더 긴 경우만 — 'rock' 이 'rocket' 에 걸리지 않게)
+    if not any(w == t or (len(t) >= 3 and w.startswith(t) and len(w) - len(t) <= 1) for w in words for t in terms):
+        return False
+    need = _words(subject)
+    if not need:
+        return True
+    if item.get("source") in STOCK_SOURCES:
+        # 사진 사이트는 태그가 느슨하다: 'sea otter' 면 sea·otter 모두 있어야 (동물원 수달 사진 방지)
+        return need <= words
+    # 위키미디어: 'common' 같은 흔한 수식어는 빼고, 나머지 이름이 '붙어서 순서대로' 있어야 한다
+    # ('Wombat Poop.jpg' 는 common wombat 으로 통과. 'OTTER ROCK, OREGON COAST ... SEA ...' 는
+    #  sea 와 otter 가 떨어져 있어 sea otter 로 통과 못 함 — 2026-11-22 실제로 붙었던 지명 사진)
+    parts = [w for w in re.findall(r"[a-z]+", subject.lower()) if w not in GENERIC_MODIFIERS] or \
+        re.findall(r"[a-z]+", subject.lower())
+    title = " ".join(re.findall(r"[a-z]+", item.get("title", "").lower()))
+    phrase = r"\b" + r"\s+".join(re.escape(p) + r"s?" for p in parts) + r"\b"
+    return bool(re.search(phrase, title))
 
 
 def search(query: str, *, commons=None, pexels=None, pixabay=None) -> list[dict]:

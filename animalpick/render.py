@@ -213,11 +213,14 @@ def caption_preview(draft: dict) -> dict:
 
 
 def plan_pages(draft: dict) -> list[tuple]:
-    """캐러셀은 2장: 표지(제목) → 표지 사진(제목 없이). 설명은 전부 캡션.
+    """캐러셀 기본 2장: 표지(제목) → 표지 사진(제목 없이). 설명은 전부 캡션.
+    이야기의 핵심 장면 사진(kind 'key')을 찾았으면 글자 없는 사진 장으로 뒤에 덧붙인다.
     표지 사진이 없으면 2장째를 캡션 요약 글자 장으로 채운다 (캐러셀은 최소 2장)."""
     cover = draft["slides"][0]
-    second = ("photo", cover) if cover.get("image") else ("text", caption_preview(draft))
-    return [("cover", cover), second]
+    keys = [("photo", s) for s in draft["slides"][1:] if s.get("kind") == "key" and s.get("image")]
+    if cover.get("image"):
+        return ([("cover", cover), ("photo", cover)] + keys)[:10]
+    return ([("cover", cover)] + (keys or [("text", caption_preview(draft))]))[:10]
 
 
 def render_draft(draft: dict, out_dir: Path) -> list[Path]:

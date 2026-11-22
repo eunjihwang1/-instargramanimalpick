@@ -107,7 +107,7 @@ class WriterTests(unittest.TestCase):
 
     def test_prompt_requires_formal_style_and_caption_story(self):
         self.assertIn("합니다체", writer.SYSTEM)
-        self.assertIn("캐러셀은 2장", writer.SYSTEM)
+        self.assertIn("캐러셀 기본은 2장", writer.SYSTEM)
 
     def test_fetch_failure_still_writes_unverified(self):
         def boom(_u):
@@ -365,6 +365,106 @@ class SubjectFilterTests(TempDataMixin, unittest.TestCase):
         used = [s["image"]["download_url"] for s in d["slides"] if s.get("image")]
         self.assertEqual(used, ["https://x/rp.jpg"])
         self.assertTrue(any("걸러냈습니다" in w for w in d["warnings"]))
+
+
+KEY_JSON = {**AI_JSON, "image_subject": "Common wombat",
+            "key_images": [{"scene": "네모난 똥", "image_query": "wombat scat", "must_match": ["scat", "poo", "feces"]},
+                           {"scene": "확인 단어 없음", "image_query": "x", "must_match": []}]}
+
+
+class KeyImageTests(TempDataMixin, unittest.TestCase):
+    def test_normalize_keeps_only_checkable_key_images(self):
+        d = writer.normalize(KEY_JSON, has_source=True)
+        self.assertEqual([s["kind"] for s in d["slides"]], ["cover", "key"])
+        self.assertEqual(d["slides"][1]["must_match"], ["scat", "poo", "feces"])
+
+    def test_matches_key(self):
+        self.assertTrue(images.matches_key({"title": "File:Wombat scat cubes.jpg"}, ["scat", "poo"], "Common wombat"))
+        self.assertFalse(images.matches_key({"title": "File:Wombat sleeping.jpg"}, ["scat"], "Common wombat"))
+        self.assertFalse(images.matches_key({"title": "File:Deer scat.jpg"}, ["scat"], "Common wombat"))  # 다른 동물
+        self.assertFalse(images.matches_key({"title": "wombat dead scat"}, ["scat"], "Common wombat"))    # 불편한 사진
+        self.assertFalse(images.matches_key({"title": "wombat scat"}, [], "Common wombat"))
+
+    def test_ai_artwork_excluded_from_stock_only(self):
+        art = {"source": "pixabay", "title": "axolotl, amphibian, animal, nature, forest, fantasy, drawing"}
+        real = {"source": "pixabay", "title": "axolotl, amphibian, aquarium, pink"}
+        self.assertFalse(images.matches_subject(art, "axolotl"))
+        self.assertTrue(images.matches_subject(real, "axolotl"))
+        self.assertFalse(images.matches_subject({"source": "pixabay", "title": "axolotl 3d model"}, "axolotl"))
+        old_plate = {"source": "wikimedia_commons", "title": "File:Axolotl illustration 1880.jpg"}
+        self.assertTrue(images.matches_subject(old_plate, "axolotl"))  # 위키미디어 도판은 그대로
+
+    def test_key_prefix_and_stock_species(self):
+        self.assertTrue(images.matches_key({"source": "wikimedia_commons", "title": "File:Wombat Poop Uncropped.jpg"},
+                                           ["poo", "scat"], "Common wombat"))
+        zoo = {"source": "pixabay", "title": "otter, stone, mammal, zoo"}
+        sea = {"source": "pixabay", "title": "sea otter, otter, stone, kelp"}
+        self.assertFalse(images.matches_key(zoo, ["stone"], "Sea otter"))
+        place = {"source": "wikimedia_commons",
+                 "title": "File:OTTER ROCK, ON THE OREGON COAST. IN THE DISTANCE, THE OPEN SEA - NARA.jpg"}
+        self.assertFalse(images.matches_key(place, ["rock", "stone"], "Sea otter"))  # 지명 '오터 록'
+        self.assertTrue(images.matches_key({"source": "wikimedia_commons", "title": "File:Sea otter with rock.jpg"},
+                                           ["rock"], "Sea otter"))
+        self.assertTrue(images.matches_key(sea, ["stone"], "Sea otter"))
+        self.assertFalse(images.matches_key({"source": "wikimedia_commons", "title": "Rocket launch"}, ["rock"], ""))  # 'rock' 이 'rocket' 에 걸리면 안 됨
+
+    def test_clean_author(self):
+        self.assertEqual(images.clean_author("Unknown authorUnknown author"), "작자 미상")
+        self.assertEqual(images.clean_author("Jason AuchJason Auch"), "Jason Auch")
+        self.assertEqual(images.clean_author("Mathias Appel"), "Mathias Appel")
+
+    def test_cover_prefers_commons_and_warns_on_stock(self):
+        def finder(q):
+            return [{"title": "red panda, animal", "download_url": "https://x/stock.jpg", "page_url": "s1",
+                     "author": "S", "license": "Pixabay Content License", "source": "pixabay"},
+                    {"title": "File:Red panda.jpg", "download_url": "https://x/commons.jpg", "page_url": "c1",
+                     "author": "C", "license": "CC0", "source": "wikimedia_commons"}]
+        write = lambda t, u, s: writer.normalize({**AI_JSON, "image_subject": "red panda"}, has_source=True)
+        d = drafts.create("판다", "", "", write=write, finder=finder, downloader=fake_downloader, pause=lambda s: None)
+        self.assertEqual(d["slides"][0]["image"]["download_url"], "https://x/commons.jpg")
+        self.assertFalse(any("AI 로 만든" in w for w in d["warnings"]))
+
+        only_stock = lambda q: [finder(q)[0]]
+        d2 = drafts.create("판다2", "", "", write=write, finder=only_stock, downloader=fake_downloader, pause=lambda s: None)
+        self.assertTrue(any("AI 로 만든" in w for w in d2["warnings"]))
+
+    def test_key_fallback_query_with_subject_name(self):
+        seen = []
+
+        def finder(q):
+            seen.append(q)
+            if q == "wombat scat":
+                return [{"title": "File:Wombat Faeces.jpg", "download_url": "https://x/f.jpg", "page_url": "wf",
+                         "author": "C", "license": "CC0", "source": "wikimedia_commons"}]
+            return [] if q.startswith("wombat cube") else fake_finder(q)
+        data = {**KEY_JSON, "key_images": [{"scene": "네모난 똥", "image_query": "wombat cube poop",
+                                            "must_match": ["scat", "poo", "faeces"]}]}
+        write = lambda t, u, s: writer.normalize(data, has_source=True)
+        d = drafts.create("웜뱃2", "", "", write=write, finder=finder, downloader=fake_downloader, pause=lambda s: None)
+        self.assertEqual(d["slides"][1]["image"]["download_url"], "https://x/f.jpg")
+        self.assertIn("wombat scat", seen)
+
+    def _create(self, finder):
+        write = lambda t, u, s: writer.normalize(KEY_JSON, has_source=True)
+        return drafts.create("웜뱃", "", "", write=write, finder=finder, downloader=fake_downloader, pause=lambda s: None)
+
+    def test_key_photo_found_adds_third_slide(self):
+        def finder(q):
+            if q == "wombat scat":
+                return [{"title": "File:Wombat sleeping.jpg", "download_url": "https://x/sleep.jpg", "page_url": "k0",
+                         "author": "A", "license": "CC0", "source": "wikimedia_commons"},
+                        {"title": "File:Wombat scat cubes.jpg", "download_url": "https://x/scat.jpg", "page_url": "k1",
+                         "author": "B", "license": "CC0", "source": "wikimedia_commons"}]
+            return fake_finder(q)
+        d = self._create(finder)
+        self.assertEqual(d["slides"][1]["image"]["download_url"], "https://x/scat.jpg")
+        self.assertEqual(d["slide_files"], ["slide_01.jpg", "slide_02.jpg", "slide_03.jpg"])
+
+    def test_key_photo_missing_stays_two_slides(self):
+        d = self._create(lambda q: [] if q.startswith("wombat") else fake_finder(q))  # 핵심 장면 사진 없음
+        self.assertIsNone(d["slides"][1]["image"])
+        self.assertEqual(len(d["slide_files"]), 2)
+        self.assertTrue(any("핵심 사진" in w for w in d["warnings"]))
 
 
 class ServerTests(unittest.TestCase):

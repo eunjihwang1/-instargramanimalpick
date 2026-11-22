@@ -200,14 +200,14 @@ function renderDetail() {
     <div class="grid2">
       <div class="card"><h3>표지 제목</h3>
         <input data-i="0" data-k="headline" value="${esc(d.slides[0].headline.replace(/\n/g, "\\n"))}" ${locked ? "disabled" : ""}>
-        <div class="muted" style="margin-top:4px">줄바꿈은 \\n 으로 표시됩니다. 캐러셀은 2장입니다: 1장 표지(제목) · 2장 같은 사진(글자 없음).</div>
+        <div class="muted" style="margin-top:4px">줄바꿈은 \\n 으로 표시됩니다. 캐러셀 기본은 2장(1장 표지 · 2장 같은 사진)이고, 이야기의 핵심 사진을 찾으면 3장째부터 사진만 덧붙습니다.</div>
         <h3 style="margin-top:18px">설명란 (캡션)</h3>
         <div class="muted">이야기는 모두 여기에 들어갑니다. 사진 출처와 해시태그는 게시할 때 자동으로 뒤에 붙습니다.</div>
         <textarea id="caption" rows="16" style="line-height:1.6" ${locked ? "disabled" : ""}>${esc(d.caption)}</textarea>
         <div class="muted" id="caplen"></div>
         <label>해시태그 (띄어쓰기로 구분)</label><input id="hashtags" value="${esc((d.hashtags || []).join(" "))}" ${locked ? "disabled" : ""}>
         <h3 style="margin-top:18px">사진</h3>
-        ${d.slides.map((sl, i) => sl.kind === "end" ? "" : `<div class="slide-edit"><div class="muted">${i === 0 ? "표지 사진" : "사진 " + i} · ${esc(sl.headline.replace(/\n/g, " "))}${sl.image ? `<br>${esc(sl.image.credit)} · <a href="${esc(sl.image.page_url)}" target="_blank">원본 보기</a>` : "<br>사진 없음 (캐러셀에서 빠짐)"}</div>
+        ${d.slides.map((sl, i) => sl.kind === "end" ? "" : `<div class="slide-edit"><div class="muted">${i === 0 ? "표지 사진" : "핵심 사진 " + i} · ${esc(sl.headline.replace(/\n/g, " "))}${sl.image ? `<br>${esc(sl.image.credit)} · <a href="${esc(sl.image.page_url)}" target="_blank">원본 보기</a>` : "<br>사진 없음 (캐러셀에서 빠짐)"}</div>
           ${sl.image && !locked ? `<label class="check"><input type="checkbox" data-rm="${i}">이 사진 빼기</label>` : ""}</div>`).join("")}
         <div class="row" style="margin-top:12px"><button class="ghost" id="save" ${locked ? "disabled" : ""}>수정 반영 + 다시 그리기</button></div>
       </div>

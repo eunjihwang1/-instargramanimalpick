@@ -19,7 +19,8 @@ MAX_SOURCE_CHARS = 30000  # 9000 이면 위키백과 긴 문서의 행동·번�
 
 SYSTEM = """너는 한국어 인스타그램 매거진 '애니멀픽(ANIMAL PICK)'의 편집장이다.
 동물·자연·과학·세상의 흥미로운 실제 이야기를 '표지 + 표지 사진 + 설명란(캡션)' 형식으로 만든다.
-캐러셀은 2장뿐이다: 1장 = 사진 위에 제목, 2장 = 같은 사진(글자 없음). 이야기는 전부 캡션에서 한다.
+캐러셀 기본은 2장이다: 1장 = 사진 위에 제목, 2장 = 같은 사진(글자 없음). 이야기는 전부 캡션에서 한다.
+이야기의 핵심이 되는 장면 사진이 따로 있으면(key_images) 글자 없는 사진 장으로 뒤에 덧붙인다.
 
 사실 규칙:
 - 사실은 [출처 본문]에 있는 내용만 쓴다. 숫자·날짜·이름을 지어내지 않는다. 출처에 없는 내용은 쓰지 않는다.
@@ -30,6 +31,15 @@ SYSTEM = """너는 한국어 인스타그램 매거진 '애니멀픽(ANIMAL PICK
   끝은 명사형(예: '돌로 집을 짓는 펭귄') 또는 합니다체(예: '돌로 집을 짓습니다'). '-다' 로 끝내지 않는다.
 - body: "" (표지에 부제는 넣지 않는다)
 - image_query: 표지 사진을 찾을 영어 검색어. 주인공이 크게 잘 보이는 장면으로 구체적으로 (예: "Adelie penguin carrying stone").
+
+핵심 사진(key_images) — 0~3개, 없어도 된다:
+- 이야기의 주인공이 '동물의 모습'이 아니라 '특정 장면·물건'일 때만 넣는다.
+  예) 네모난 똥을 싸는 웜뱃 → 웜뱃의 네모난 똥 사진. 돌로 둥지를 짓는 펭귄 → 돌 둥지 사진.
+  표지 사진과 비슷한 동물 사진은 넣지 않는다.
+- scene: 그 사진이 보여 줄 장면(한국어 한 줄)
+- image_query: 그 장면을 찾을 영어 검색어 (예: "wombat cube scat")
+- must_match: 사진 제목·태그에 하나라도 있어야 하는 영어 단어들 (예: ["scat","poo","feces","dung","droppings"]).
+  이 단어가 없는 사진은 쓰지 않으므로, 그 장면을 가리키는 흔한 영어 단어를 3~6개 넣는다.
 
 캡션(caption) — 이야기의 본문. 가장 중요하다:
 - 말투는 처음부터 끝까지 '-입니다', '-합니다', '-습니다', '-습니까' 로 끝나는 합니다체. '-다', '-요', '-까요' 로 끝내지 않는다 (질문도 '-ㅂ니까?').
@@ -49,6 +59,7 @@ SYSTEM = """너는 한국어 인스타그램 매거진 '애니멀픽(ANIMAL PICK
 JSON 하나만 출력한다:
 {"topic": "...", "fact_status": "sourced" 또는 "unverified", "image_subject": "...",
  "slides": [{"kind": "cover", "headline": "...", "body": "", "image_query": "..."}],
+ "key_images": [{"scene": "...", "image_query": "...", "must_match": ["..."]}],
  "caption": "...", "hashtags": ["..."], "sources": [{"title": "...", "url": "..."}],
  "fact_notes": "검수자가 확인해야 할 사실·숫자 목록 (짧게)"}"""
 
@@ -104,17 +115,22 @@ def normalize(data: dict, *, source_url: str = "", has_source: bool = False) -> 
     slides = [s for s in data.get("slides", []) if isinstance(s, dict) and str(s.get("headline", "")).strip()]
     if not slides:
         raise ValueError("표지가 없습니다")
-    slides = slides[:1]  # 표지 하나만 쓴다 (2장째는 표지 사진을 글자 없이)
-    out = []
-    for i, s in enumerate(slides):
-        kind = "cover" if i == 0 else "body"  # 마지막 글자 장(end)은 없앴다 — 설명은 캡션으로
-        out.append({
-            "kind": kind,
-            "headline": str(s.get("headline", "")).replace("\\n", "\n").strip(),
-            "body": str(s.get("body", "")).strip(),
-            "image_query": str(s.get("image_query", "")).strip(),
-            "image": None,
-        })
+    cover = slides[0]  # 2장째는 표지 사진을 글자 없이 (render.plan_pages)
+    out = [{
+        "kind": "cover",
+        "headline": str(cover.get("headline", "")).replace("\\n", "\n").strip(),
+        "body": "",
+        "image_query": str(cover.get("image_query", "")).strip(),
+        "image": None,
+    }]
+    for k in (data.get("key_images") or [])[:3]:  # 이야기의 핵심 장면 사진 (있을 때만 붙는다)
+        if not isinstance(k, dict) or not str(k.get("image_query", "")).strip():
+            continue
+        terms = [str(t).strip().lower() for t in (k.get("must_match") or []) if str(t).strip()]
+        if not terms:
+            continue  # 확인할 단어가 없으면 엉뚱한 사진을 막을 수 없으므로 쓰지 않는다
+        out.append({"kind": "key", "headline": str(k.get("scene", "")).strip(), "body": "",
+                    "image_query": str(k["image_query"]).strip(), "must_match": terms[:8], "image": None})
     sources = [x for x in data.get("sources", []) if isinstance(x, dict) and x.get("url")]
     if source_url and not any(x["url"] == source_url for x in sources):
         sources.insert(0, {"title": data.get("topic", ""), "url": source_url})
