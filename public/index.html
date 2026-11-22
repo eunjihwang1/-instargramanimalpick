@@ -106,7 +106,7 @@ function renderStatus() {
   const s = state.status;
   const pill = (ok, text) => `<span class="pill ${ok ? "ok" : "no"}">${text}</span>`;
   let html = pill(s.page_token, s.page_token ? `Instagram 연결 @${esc(s.ig_username)}` : "Instagram 미연결")
-    + pill(!!s.media_repo, s.media_repo ? "이미지 호스팅 준비" : "이미지 호스팅 미설정")
+    + pill(!!s.media_repo, s.media_repo ? "게시용 임시 주소 준비" : "게시용 임시 주소 프로그램 없음")
     + (() => { const extra = [s.pexels && "Pexels", s.pixabay && "Pixabay"].filter(Boolean);
         return pill(extra.length > 0, extra.length ? `사진: 위키미디어 + ${extra.join(" + ")}` : "사진: 위키미디어만 (Pixabay 키 없음)"); })();
   if (!s.page_token && s.short_token && s.app_keys) html += ` <button class="ghost" id="setup">토큰 설정 실행</button>`;

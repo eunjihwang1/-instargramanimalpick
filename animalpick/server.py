@@ -11,7 +11,7 @@ import sys
 import traceback
 from urllib.parse import urlparse
 
-from . import claude, config, drafts, token_setup
+from . import claude, config, drafts, token_setup, tunnel
 
 PORT = 3800
 PUBLIC = config.ROOT / "public"
@@ -24,7 +24,7 @@ def status() -> dict:
         "ig_username": config.env("META_IG_USERNAME"),
         "app_keys": bool(config.env("META_APP_ID") and config.env("META_APP_SECRET")),
         "short_token": bool(config.env("META_ACCESS_TOKEN")),
-        "media_repo": config.env("MEDIA_GITHUB_REPO"),
+        "media_repo": tunnel.CLOUDFLARED.exists() if config.env("MEDIA_HOSTING") != "github" else bool(config.env("MEDIA_GITHUB_REPO")),
         "pexels": bool(config.env("PEXELS_API_KEY")),
         "pixabay": bool(config.env("PIXABAY_API_KEY")),
         "checklist": drafts.CHECKLIST,

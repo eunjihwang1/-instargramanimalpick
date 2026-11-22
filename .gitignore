@@ -19,3 +19,6 @@ data/cache/
 
 # 개인 화면 캡처 (공개 저장소에 올리지 않음)
 assets/reference_screenshots/
+
+# 외부 프로그램 (cloudflared 등)
+tools/

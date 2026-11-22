@@ -10,7 +10,7 @@ Codex 기획은 "레퍼런스 분석 → … → 마지막에 게시" 순서였�
 비공식 브라우저 자동 게시는 계정 정지·보너스 자격 위험 때문에 쓰지 않는다.
 
 ## 다음 할 일 (딱 하나)
-사용자 승인: 게시용 이미지 공개 호스팅(GitHub 공개 저장소) 만들기 → 첫 실제 게시 시험.
+사용자: 대시보드에서 원고 하나를 검수·승인 → [테스트 게시] → [Instagram 에 지금 게시] 로 첫 실제 게시.
 
 ## 확인된 사실
 - [x] (사용자 진술) 프로페셔널 계정 전환, Facebook 페이지 생성, Meta 개발자 앱 생성
@@ -25,7 +25,7 @@ Codex 기획은 "레퍼런스 분석 → … → 마지막에 게시" 순서였�
 - [x] 대시보드 실행 확인 (http://localhost:3800)
 
 ## 미확인 (실측 전까지 가정 금지)
-- [ ] GitHub 공개 이미지 저장소 (raw.githubusercontent.com) 를 Instagram 이 받아 가는지
+- [ ] Cloudflare 임시 주소에서 Instagram 이 이미지를 받아 가는지 (첫 실제 게시로 확인)
 - [ ] 실제 캐러셀 게시 1회
 - [ ] `@heodukgoo` Business Discovery 반환 필드 (`view_count` 등)
 
@@ -49,7 +49,8 @@ Codex 기획은 "레퍼런스 분석 → … → 마지막에 게시" 순서였�
 | `animalpick/images.py` | 위키미디어 공용 → Pexels 순 사진 검색 (권리 확인된 것만) | 위키미디어 실제 동작(확보율 40~60%), Pexels 키 대기 |
 | `animalpick/render.py` | 캐러셀 JPEG | 동작 확인 |
 | `animalpick/drafts.py` | 원고 저장·체크리스트 승인·중복 방지·예약·게시 이력 | 오프라인 테스트 |
-| `animalpick/hosting.py` | GitHub 공개 저장소에 이미지 업로드 | 오프라인 테스트, 저장소 미생성 |
+| `animalpick/tunnel.py` | **기본** 게시 이미지 임시 공개 (로컬 파일 + Cloudflare 임시 주소, 게시 중에만) | 실제 동작 확인 |
+| `animalpick/hosting.py` | 보조: GitHub 공개 저장소 업로드 (`MEDIA_HOSTING=github` 일 때만) | 오프라인 테스트만, 저장소 없음 |
 | `animalpick/publisher.py` | Instagram 캐러셀 게시 (한도 확인·재시도) | 오프라인 테스트만 |
 | `animalpick/token_setup.py` / `scripts/setup_token.py` | 1회 토큰 → 만료 없는 페이지 토큰 | 오프라인 테스트만 |
 | `scripts/publish_due.py` | 예약된 승인 원고 게시 (작업 스케줄러용) | 오프라인 테스트, 스케줄러 미등록 |
@@ -76,3 +77,6 @@ Codex 기획은 "레퍼런스 분석 → … → 마지막에 게시" 순서였�
   5) 대시보드가 3개 동시에 같은 포트에 떠서 옛 코드가 응답 → 중복 실행 방지(SO_EXCLUSIVEADDRUSE) + 안내 문구. 테스트 62개.
 - 2026-11-22 14:22 첫 실제 Meta API 호출 성공. 토큰에 instagram_content_publish 가 빠져 재발급 필요.
 - 2026-11-22 14:30 **만료 없는 게시용 페이지 토큰 저장 성공**, 게시 권한 포함. 게시 한도 조회 성공(24시간 100건). 남은 것: 이미지 호스팅 → 첫 실제 게시.
+- 2026-11-22 GitHub(eunjihwang1/-instargramanimalpick, 공개) 첫 푸시. 비밀값·캡처·산출물 제외.
+- 2026-11-22 사용자 결정: 게시 이미지는 로컬 보관. Cloudflare 임시 터널(cloudflared 2026.11.1, 서명 확인, tools/ 에 두고 Git 제외)로 게시하는 동안만 공개.
+  실측: 주소 열리는 데 약 28초, 8/8장 원본과 동일하게 전달, 닫힌 뒤 502. 테스트 71개.

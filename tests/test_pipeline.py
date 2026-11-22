@@ -58,6 +58,20 @@ def fake_downloader(url, dest, fallback_url=None):
     return dest
 
 
+def fake_hoster(events=None):
+    from contextlib import contextmanager
+    events = events if events is not None else []
+
+    @contextmanager
+    def hoster(files, draft_id):
+        events.append("open")
+        try:
+            yield [f"https://t.example/{f.name}" for f in files]
+        finally:
+            events.append("close")
+    return hoster
+
+
 class TempDataMixin:
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -411,7 +425,7 @@ class DraftFlowTests(TempDataMixin, unittest.TestCase):
         drafts.set_status(d["id"], "approved", {k: True for k in drafts.CHECKLIST})
         called = []
         with patch.dict(os.environ, {"META_IG_USER_ID": "123"}):
-            r = drafts.publish(d["id"], dry_run=True, uploader=lambda *a: called.append("upload"))
+            r = drafts.publish(d["id"], dry_run=True, hoster=lambda *a: called.append("host"))
         self.assertEqual(called, [])
         self.assertEqual(r["status"], "approved")
         self.assertIn("사진: Tester / CC0", r["last_dry_run"]["caption"])
@@ -421,12 +435,22 @@ class DraftFlowTests(TempDataMixin, unittest.TestCase):
         d = self.make()
         drafts.set_status(d["id"], "approved", {k: True for k in drafts.CHECKLIST})
         fake_pub = lambda urls, caption, dry_run, log: {"media_id": "M1", "permalink": "https://ig/p/1"}
-        r = drafts.publish(d["id"], dry_run=False, uploader=lambda files, prefix: [f"https://h/{f.name}" for f in files],
-                           waiter=lambda urls: None, publish_fn=fake_pub)
+        r = drafts.publish(d["id"], dry_run=False, hoster=fake_hoster(), publish_fn=fake_pub)
         self.assertEqual(r["status"], "published")
         self.assertEqual(r["publish"]["media_id"], "M1")
         with self.assertRaises(ValueError):
             drafts.publish(d["id"], dry_run=False, publish_fn=fake_pub)
+
+    def test_tunnel_closed_even_when_publish_fails(self):
+        d = self.make()
+        drafts.set_status(d["id"], "approved", {k: True for k in drafts.CHECKLIST})
+        events = []
+
+        def bad(*a, **k):
+            raise publisher.PublishError("x")
+        with self.assertRaises(publisher.PublishError):
+            drafts.publish(d["id"], dry_run=False, hoster=fake_hoster(events), publish_fn=bad)
+        self.assertEqual(events, ["open", "close"])
 
     def test_failed_publish_recorded(self):
         d = self.make()
@@ -435,7 +459,7 @@ class DraftFlowTests(TempDataMixin, unittest.TestCase):
         def bad(*a, **k):
             raise publisher.PublishError("한도 초과")
         with self.assertRaises(publisher.PublishError):
-            drafts.publish(d["id"], dry_run=False, uploader=lambda f, p: ["u"] * len(f), waiter=lambda u: None, publish_fn=bad)
+            drafts.publish(d["id"], dry_run=False, hoster=fake_hoster(), publish_fn=bad)
         self.assertEqual(drafts.load(d["id"])["status"], "failed")
 
     def test_run_due_only_past_approved(self):
@@ -447,7 +471,7 @@ class DraftFlowTests(TempDataMixin, unittest.TestCase):
         drafts.set_schedule(b["id"], "2099-01-01T09:00:00")
         seen = []
         res = drafts.run_due(dry_run=False, now_fn=lambda: datetime(2026, 6, 1),
-                             uploader=lambda f, p: ["u"] * len(f), waiter=lambda u: None,
+                             hoster=fake_hoster(),
                              publish_fn=lambda urls, caption, dry_run, log: seen.append(1) or {"media_id": "X"})
         self.assertEqual(len(seen), 1)
         self.assertIn(a["id"], res[0])

@@ -6,6 +6,7 @@ data/drafts/<id>/draft.json + slide_XX.jpg + img_XX.jpg(원본 사진)
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime
 import hashlib
 import json
@@ -14,7 +15,7 @@ import re
 import threading
 import time
 
-from . import config, hosting, images, publisher, render, writer
+from . import config, hosting, images, publisher, render, tunnel, writer
 
 CHECKLIST = {
     "facts": "사실·숫자를 출처와 대조해 확인했다",
@@ -215,7 +216,22 @@ def full_caption(draft: dict) -> str:
     return "\n\n".join(p for p in parts if p)
 
 
-def publish(draft_id: str, *, dry_run: bool = True, uploader=hosting.upload, waiter=hosting.wait_public,
+@contextmanager
+def _github_hosting(files: list[Path], draft_id: str):
+    """보조 방식: MEDIA_HOSTING=github 일 때만. GitHub 공개 저장소에 영구 업로드."""
+    urls = hosting.upload(files, f"{draft_id}/{datetime.now().strftime('%H%M%S')}")
+    hosting.wait_public(urls)
+    yield urls
+
+
+def default_hoster(files: list[Path], draft_id: str):
+    """기본: 이미지는 이 컴퓨터에만 두고 게시하는 동안만 Cloudflare 임시 주소로 공개."""
+    if config.env("MEDIA_HOSTING") == "github":
+        return _github_hosting(files, draft_id)
+    return tunnel.public_urls(files)
+
+
+def publish(draft_id: str, *, dry_run: bool = True, hoster=default_hoster,
             publish_fn=publisher.publish_carousel) -> dict:
     """approved 원고를 게시. 중복 게시 방지: published 이거나 media_id 가 있으면 거부."""
     with _publish_lock:
@@ -229,13 +245,12 @@ def publish(draft_id: str, *, dry_run: bool = True, uploader=hosting.upload, wai
         caption = full_caption(draft)
         try:
             if dry_run:
-                urls = [f"(테스트) {f.name}" for f in files]
+                result = publish_fn([f"(테스트) {f.name}" for f in files], caption, dry_run=True, log=log.append)
             else:
-                prefix = f"{draft_id}/{datetime.now().strftime('%H%M%S')}"
-                urls = uploader(files, prefix)
-                log.append(f"이미지 {len(urls)}장 공개 호스팅 업로드")
-                waiter(urls)
-            result = publish_fn(urls, caption, dry_run=dry_run, log=log.append)
+                with hoster(files, draft_id) as urls:  # 이 블록 안에서만 이미지가 공개된다
+                    log.append(f"이미지 {len(urls)}장 임시 공개 주소 준비")
+                    result = publish_fn(urls, caption, dry_run=False, log=log.append)
+                log.append("임시 공개 주소 닫음")
         except Exception as exc:
             if not dry_run:
                 draft["status"] = "failed"
@@ -248,7 +263,7 @@ def publish(draft_id: str, *, dry_run: bool = True, uploader=hosting.upload, wai
             draft["last_dry_run"] = {"at": now(), "log": log, "caption": caption}
         else:
             draft["status"] = "published"
-            draft["publish"] = {**result, "log": log, "at": now(), "image_urls": urls}
+            draft["publish"] = {**result, "log": log, "at": now()}
             draft["history"].append({"at": now(), "event": "published"})
         return save(draft)
 
