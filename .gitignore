@@ -1,0 +1,21 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+output/
+*.log
+.DS_Store
+
+# 런타임 산출물 (API 원본 응답, 로컬 DB)
+data/raw/
+data/*.db
+data/*.db-journal
+data/drafts/
+data/cache/
+
+# 개인 화면 캡처 (공개 저장소에 올리지 않음)
+assets/reference_screenshots/

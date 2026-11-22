@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>애니멀픽 제작실</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --ink:#151515; --sub:#666; --line:#e6e2da; --paper:#f7f4ee; --accent:#ffc400; --ok:#1f8a4c; --bad:#c0392b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: "Noto Sans KR", "Malgun Gothic", sans-serif; color:var(--ink); background:var(--paper); }
+  header { display:flex; align-items:center; gap:16px; padding:14px 24px; background:#fff; border-bottom:1px solid var(--line); }
+  header h1 { font-size:18px; margin:0; letter-spacing:.5px; }
+  header h1 b { background:var(--accent); padding:0 4px; }
+  #status { font-size:13px; color:var(--sub); display:flex; gap:14px; flex-wrap:wrap; }
+  .pill { padding:2px 8px; border-radius:20px; background:#eee; }
+  .pill.ok { background:#e3f4ea; color:var(--ok); } .pill.no { background:#fbe9e7; color:var(--bad); }
+  main { display:grid; grid-template-columns: 340px 1fr; min-height: calc(100vh - 56px); }
+  aside { border-right:1px solid var(--line); background:#fff; padding:18px; overflow:auto; }
+  section { padding:22px 28px; overflow:auto; }
+  label { display:block; font-size:13px; color:var(--sub); margin:10px 0 4px; }
+  input, textarea { width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px; font:inherit; font-size:14px; background:#fff; }
+  textarea { resize:vertical; }
+  button { font:inherit; font-size:14px; padding:9px 14px; border-radius:8px; border:1px solid var(--ink); background:var(--ink); color:#fff; cursor:pointer; }
+  button.ghost { background:#fff; color:var(--ink); }
+  button.warn { background:var(--bad); border-color:var(--bad); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .list { margin-top:20px; display:flex; flex-direction:column; gap:8px; }
+  .item { display:flex; gap:10px; padding:8px; border:1px solid var(--line); border-radius:10px; cursor:pointer; background:#fff; }
+  .item.active { border-color:var(--ink); }
+  .item img { width:52px; height:65px; object-fit:cover; border-radius:6px; background:#ddd; }
+  .item .t { font-size:13px; line-height:1.35; }
+  .badge { font-size:11px; padding:1px 6px; border-radius:10px; background:#eee; }
+  .badge.approved { background:#e3f4ea; color:var(--ok); } .badge.published { background:var(--ink); color:#fff; }
+  .badge.rejected, .badge.failed { background:#fbe9e7; color:var(--bad); }
+  .slides { display:flex; gap:12px; overflow-x:auto; padding-bottom:8px; }
+  .slides img { width:260px; height:325px; object-fit:cover; border-radius:8px; border:1px solid var(--line); }
+  .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:22px; margin-top:20px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 10px; font-size:15px; }
+  .slide-edit { border-top:1px dashed var(--line); padding-top:8px; margin-top:8px; }
+  .warn-box { background:#fff8e1; border:1px solid #f1d47a; padding:10px 12px; border-radius:8px; font-size:13px; margin-top:12px; }
+  .log { font-family: Consolas, monospace; font-size:12px; white-space:pre-wrap; background:#111; color:#eee; padding:10px; border-radius:8px; max-height:200px; overflow:auto; }
+  .muted { color:var(--sub); font-size:13px; }
+  .check { display:flex; gap:8px; align-items:flex-start; font-size:14px; margin:6px 0; }
+  .check input { width:auto; margin-top:4px; }
+  #busy { position:fixed; inset:0; background:rgba(255,255,255,.7); display:none; align-items:center; justify-content:center; font-size:16px; z-index:9; }
+  a { color:inherit; }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; }
+    aside { border-right:0; border-bottom:1px solid var(--line); }
+    .grid2 { grid-template-columns: 1fr; }
+    header { flex-wrap:wrap; }
+    section { padding:16px; }
+    .slides img { width:200px; height:250px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1><b>ANIMAL PICK</b> 제작실</h1>
+  <div id="status"></div>
+</header>
+<main>
+  <aside>
+    <h3 style="margin:0 0 6px">새 콘텐츠 만들기</h3>
+    <div class="muted">소재와 출처 기사 주소를 넣으면 AI가 원고를 쓰고, 사용 허가된 사진을 찾아 캐러셀을 만듭니다.</div>
+    <label>소재 (한 줄)</label>
+    <input id="topic" placeholder="예: 동물원에서 탈출한 레서판다가 사흘 만에 돌아온 이야기">
+    <label>출처 기사 주소 (권장)</label>
+    <input id="source_url" placeholder="https://...">
+    <label>출처 본문 붙여넣기 (주소가 안 열릴 때)</label>
+    <textarea id="source_text" rows="3"></textarea>
+    <div class="row" style="margin-top:10px"><button id="create">원고 + 캐러셀 만들기</button></div>
+    <div class="list" id="list"></div>
+  </aside>
+  <section id="detail"><div class="muted">왼쪽에서 콘텐츠를 만들거나 선택하세요.</div></section>
+</main>
+<div id="busy">작업 중…</div>
+<script type="module">
+const $ = (s) => document.querySelector(s);
+let state = { status: null, drafts: [], current: null };
+const LABEL = { draft: "검수 대기", approved: "승인됨", published: "게시됨", rejected: "반려", failed: "게시 실패" };
+
+async function api(method, url, body) {
+  const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "오류");
+  return data;
+}
+async function busy(msg, fn) {
+  $("#busy").textContent = msg; $("#busy").style.display = "flex";
+  try { return await fn(); } catch (e) { alert(e.message); } finally { $("#busy").style.display = "none"; }
+}
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const img = (d, f) => `/media/${d.id}/${f}?v=${encodeURIComponent(d.updated_at || "")}`;
+
+async function refresh(selectId) {
+  state.status = await api("GET", "/api/status");
+  state.drafts = await api("GET", "/api/drafts");
+  if (selectId) state.current = selectId;
+  renderStatus(); renderList(); renderDetail();
+}
+
+function renderStatus() {
+  const s = state.status;
+  const pill = (ok, text) => `<span class="pill ${ok ? "ok" : "no"}">${text}</span>`;
+  let html = pill(s.page_token, s.page_token ? `Instagram 연결 @${esc(s.ig_username)}` : "Instagram 미연결")
+    + pill(!!s.media_repo, s.media_repo ? "이미지 호스팅 준비" : "이미지 호스팅 미설정")
+    + (() => { const extra = [s.pexels && "Pexels", s.pixabay && "Pixabay"].filter(Boolean);
+        return pill(extra.length > 0, extra.length ? `사진: 위키미디어 + ${extra.join(" + ")}` : "사진: 위키미디어만 (Pixabay 키 없음)"); })();
+  if (!s.page_token && s.short_token && s.app_keys) html += ` <button class="ghost" id="setup">토큰 설정 실행</button>`;
+  $("#status").innerHTML = html;
+  $("#setup")?.addEventListener("click", () => busy("토큰 설정 중…", async () => {
+    const r = await api("POST", "/api/setup-token"); alert(r.lines.join("\n")); await refresh();
+  }));
+}
+
+function renderList() {
+  $("#list").innerHTML = state.drafts.map((d) => `
+    <div class="item ${d.id === state.current ? "active" : ""}" data-id="${d.id}">
+      <img src="${d.slide_files?.[0] ? img(d, d.slide_files[0]) : ""}" alt="">
+      <div class="t"><span class="badge ${d.status}">${LABEL[d.status] || d.status}</span>
+        ${d.scheduled_at && d.status === "approved" ? `<span class="badge">예약</span>` : ""}<br>
+        ${esc((d.slides?.[0]?.headline || d.input?.topic || "").replace(/\n/g, " "))}</div>
+    </div>`).join("") || `<div class="muted">아직 만든 콘텐츠가 없습니다.</div>`;
+  document.querySelectorAll(".item").forEach((el) => el.addEventListener("click", () => { state.current = el.dataset.id; renderList(); renderDetail(); }));
+}
+
+function renderDetail() {
+  const d = state.drafts.find((x) => x.id === state.current);
+  if (!d) return;
+  const s = state.status, locked = d.status === "published";
+  const warnings = [...(d.warnings || [])];
+  if (d.fact_status !== "sourced") warnings.unshift("출처 본문 없이 만든 원고입니다. 사실을 반드시 직접 확인하세요.");
+  $("#detail").innerHTML = `
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0;font-size:20px">${esc(d.topic || d.input.topic)}</h2>
+      <span class="badge ${d.status}" style="font-size:13px">${LABEL[d.status] || d.status}</span>
+    </div>
+    ${warnings.length ? `<div class="warn-box">${warnings.map(esc).join("<br>")}</div>` : ""}
+    <div class="slides" style="margin-top:14px">${(d.slide_files || []).map((f) => `<a href="${img(d, f)}" target="_blank"><img src="${img(d, f)}"></a>`).join("")}</div>
+    <div class="grid2">
+      <div class="card"><h3>문구 수정</h3>
+        ${d.slides.map((sl, i) => `<div class="slide-edit"><div class="muted">${i + 1}장 · ${sl.kind}${sl.image ? ` · 사진: ${esc(sl.image.credit)} <a href="${esc(sl.image.page_url)}" target="_blank">원본</a>` : ""}</div>
+          <input data-i="${i}" data-k="headline" value="${esc(sl.headline.replace(/\n/g, "\\n"))}" ${locked ? "disabled" : ""}>
+          <textarea data-i="${i}" data-k="body" rows="2" ${locked ? "disabled" : ""}>${esc(sl.body)}</textarea>
+          ${sl.image && !locked ? `<label class="check"><input type="checkbox" data-rm="${i}">이 사진 빼기</label>` : ""}</div>`).join("")}
+        <label>캡션</label><textarea id="caption" rows="5" ${locked ? "disabled" : ""}>${esc(d.caption)}</textarea>
+        <label>해시태그 (띄어쓰기로 구분)</label><input id="hashtags" value="${esc((d.hashtags || []).join(" "))}" ${locked ? "disabled" : ""}>
+        <div class="row" style="margin-top:10px"><button class="ghost" id="save" ${locked ? "disabled" : ""}>수정 반영 + 다시 그리기</button></div>
+        <div class="muted" style="margin-top:6px">제목 줄바꿈은 \\n 으로 표시됩니다.</div>
+      </div>
+      <div>
+        <div class="card"><h3>검수</h3>
+          ${Object.entries(s.checklist).map(([k, v]) => `<label class="check"><input type="checkbox" data-ck="${k}" ${d.checklist?.[k] ? "checked" : ""} ${locked ? "disabled" : ""}>${esc(v)}</label>`).join("")}
+          ${d.fact_notes ? `<div class="muted" style="margin-top:8px"><b>확인할 것:</b> ${esc(d.fact_notes)}</div>` : ""}
+          <div class="muted" style="margin-top:8px"><b>출처:</b> ${(d.sources || []).map((x) => `<a href="${esc(x.url)}" target="_blank">${esc(x.title || x.url)}</a>`).join(", ") || "없음"}</div>
+          <div class="row" style="margin-top:12px">
+            <button id="approve" ${locked ? "disabled" : ""}>승인</button>
+            <button class="ghost" id="reject" ${locked ? "disabled" : ""}>반려</button>
+          </div>
+        </div>
+        <div class="card" style="margin-top:16px"><h3>게시</h3>
+          <div class="muted">승인된 콘텐츠만 게시됩니다. 먼저 '테스트 게시'로 확인하세요 (Instagram 에 올라가지 않음).</div>
+          <label>예약 시각 (비우면 예약 없음)</label>
+          <div class="row"><input type="datetime-local" id="when" style="max-width:240px" value="${d.scheduled_at ? d.scheduled_at.slice(0, 16) : ""}" ${locked ? "disabled" : ""}>
+            <button class="ghost" id="schedule" ${locked ? "disabled" : ""}>예약 저장</button></div>
+          <div class="row" style="margin-top:12px">
+            <button class="ghost" id="dry" ${d.status !== "approved" ? "disabled" : ""}>테스트 게시</button>
+            <button class="warn" id="real" ${d.status !== "approved" || !s.page_token || !s.media_repo ? "disabled" : ""}>Instagram 에 지금 게시</button>
+          </div>
+          ${d.publish?.permalink ? `<p>게시됨: <a href="${esc(d.publish.permalink)}" target="_blank">${esc(d.publish.permalink)}</a></p>` : ""}
+          ${d.publish?.error ? `<div class="warn-box">실패: ${esc(d.publish.error)}</div>` : ""}
+          ${(d.publish?.log || d.last_dry_run?.log) ? `<div class="log" style="margin-top:10px">${esc((d.publish?.log || d.last_dry_run.log).join("\n"))}</div>` : ""}
+        </div>
+      </div>
+    </div>`;
+  const checklist = () => Object.fromEntries([...document.querySelectorAll("[data-ck]")].map((el) => [el.dataset.ck, el.checked]));
+  $("#save")?.addEventListener("click", () => busy("다시 그리는 중…", async () => {
+    const slides = d.slides.map((_, i) => ({
+      headline: document.querySelector(`[data-i="${i}"][data-k="headline"]`).value.replace(/\\n/g, "\n"),
+      body: document.querySelector(`[data-i="${i}"][data-k="body"]`).value,
+      remove_image: document.querySelector(`[data-rm="${i}"]`)?.checked || false,
+    }));
+    await api("PUT", `/api/drafts/${d.id}`, { slides, caption: $("#caption").value, hashtags: $("#hashtags").value.split(/\s+/) });
+    await refresh(d.id);
+  }));
+  $("#approve")?.addEventListener("click", () => busy("저장 중…", async () => { await api("POST", `/api/drafts/${d.id}/status`, { status: "approved", checklist: checklist() }); await refresh(d.id); }));
+  $("#reject")?.addEventListener("click", () => busy("저장 중…", async () => { await api("POST", `/api/drafts/${d.id}/status`, { status: "rejected", checklist: checklist() }); await refresh(d.id); }));
+  $("#schedule")?.addEventListener("click", () => busy("저장 중…", async () => {
+    const v = $("#when").value; await api("POST", `/api/drafts/${d.id}/schedule`, { scheduled_at: v ? v + ":00" : null }); await refresh(d.id);
+  }));
+  $("#dry")?.addEventListener("click", () => busy("테스트 중…", async () => { await api("POST", `/api/drafts/${d.id}/publish`, { dry_run: true }); await refresh(d.id); }));
+  $("#real")?.addEventListener("click", () => {
+    if (!confirm("정말 Instagram 에 지금 공개 게시할까요? 게시 후에는 Instagram 앱에서만 삭제할 수 있습니다.")) return;
+    busy("Instagram 에 게시 중… (1분 정도 걸릴 수 있어요)", async () => { await api("POST", `/api/drafts/${d.id}/publish`, { dry_run: false }); await refresh(d.id); });
+  });
+}
+
+$("#create").addEventListener("click", () => busy("AI가 원고를 쓰고 사진을 찾는 중… (1~2분)", async () => {
+  const d = await api("POST", "/api/drafts", { topic: $("#topic").value, source_url: $("#source_url").value, source_text: $("#source_text").value });
+  $("#topic").value = $("#source_url").value = $("#source_text").value = "";
+  await refresh(d.id);
+}));
+refresh();
+</script>
+</body>
+</html>
