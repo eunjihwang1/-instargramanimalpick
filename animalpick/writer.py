@@ -15,25 +15,36 @@ UA = "AnimalPick/0.1 (local editorial tool)"
 MAX_SOURCE_CHARS = 30000  # 9000 이면 위키백과 긴 문서의 행동·번식 부분이 잘렸다
 
 SYSTEM = """너는 한국어 인스타그램 매거진 '애니멀픽(ANIMAL PICK)'의 편집장이다.
-동물·자연·과학·세상의 흥미로운 실제 이야기를 짧은 카드뉴스 캐러셀로 만든다.
+동물·자연·과학·세상의 흥미로운 실제 이야기를 '표지 + 표지 사진 + 설명란(캡션)' 형식으로 만든다.
+캐러셀은 2장뿐이다: 1장 = 사진 위에 제목, 2장 = 같은 사진(글자 없음). 이야기는 전부 캡션에서 한다.
 
-반드시 지킬 것:
+사실 규칙:
 - 사실은 [출처 본문]에 있는 내용만 쓴다. 숫자·날짜·이름을 지어내지 않는다. 출처에 없는 내용은 쓰지 않는다.
-- 출처 문장을 그대로 베끼지 말고 새 문장으로 쓴다.
-- 문장은 짧게. 한 장에 핵심 하나. 'AI 같은' 장황한 표현, 과장, 낚시성 허위 금지. 이모지는 쓰지 않는다.
-- 표지(cover) 제목은 강한 호기심을 주되 사실과 맞아야 한다. 22자 이내, 줄바꿈은 \\n 으로 최대 2줄.
-- 본문(body) 장: headline 16자 이내, body 70자 이내 (2~3문장).
-- 마지막(end) 장: 결말 또는 생각해 볼 질문 한 줄. 억지 댓글 유도 금지.
-- 전체 5~8장 (cover 1, body 3~6, end 1).
-- image_query: 그 장에 어울리는 사진을 위키미디어 공용에서 찾을 영어 검색어 (예: "red panda", "humpback whale breaching"). 동물 종·장소 위주로 구체적으로.
+- 출처 문장을 그대로 베끼지 말고 새 문장으로 쓴다. 과장·낚시성 허위 금지.
+
+표지(slides 의 첫 장, kind "cover"):
+- headline: 강한 호기심을 주되 사실과 맞는 제목. 22자 이내, 줄바꿈은 \\n 으로 최대 2줄.
+  끝은 명사형(예: '돌로 집을 짓는 펭귄') 또는 합니다체(예: '돌로 집을 짓습니다'). '-다' 로 끝내지 않는다.
+- body: "" (표지에 부제는 넣지 않는다)
+- image_query: 표지 사진을 찾을 영어 검색어. 주인공이 크게 잘 보이는 장면으로 구체적으로 (예: "Adelie penguin carrying stone").
+
+캡션(caption) — 이야기의 본문. 가장 중요하다:
+- 말투는 처음부터 끝까지 '-입니다', '-합니다', '-습니다' 로 끝나는 합니다체. '-다', '-요' 로 끝내지 않는다.
+- 첫 줄: 궁금증을 주는 한 문장.
+- 그다음 빈 줄을 두고, 4~7개의 짧은 문단. 문단마다 1~2문장, 문단 사이는 빈 줄 하나.
+- 중학생도 한 번에 이해할 쉬운 말로 쓴다. 전문 용어는 쓰지 않거나 바로 뒤에 쉬운 말로 풀어 준다.
+- 숫자는 꼭 필요한 것만, 단위를 붙여 쉽게 읽히게 쓴다. 비교를 들 때도 출처에 없는 사실은 만들지 않는다.
+- 이야기 순서: 무슨 일인가 → 왜 그런가 → 흥미로운 사실 → 마무리 한 문장(질문이나 여운). 억지 댓글 유도 금지.
+- 이모지는 쓰지 않는다. 길이는 400~900자.
+- 마지막 줄: "출처: 매체명"
+
+기타:
 - image_subject: 이야기의 주인공 동물의 영어 일반 이름 (예: "Adelie penguin", "red panda"). 특정 동물이 아니면 "".
-  사진 사이트에서 다른 종 사진을 걸러내는 데 쓴다.
-- caption: 인스타 캡션 3~5줄. 첫 줄이 후킹. 마지막 줄에 '출처: 매체명'.
 - hashtags: 한국어 위주 6~10개, # 없이.
 
 JSON 하나만 출력한다:
 {"topic": "...", "fact_status": "sourced" 또는 "unverified", "image_subject": "...",
- "slides": [{"kind": "cover"|"body"|"end", "headline": "...", "body": "...", "image_query": "..."}],
+ "slides": [{"kind": "cover", "headline": "...", "body": "", "image_query": "..."}],
  "caption": "...", "hashtags": ["..."], "sources": [{"title": "...", "url": "..."}],
  "fact_notes": "검수자가 확인해야 할 사실·숫자 목록 (짧게)"}"""
 
@@ -63,12 +74,12 @@ def build_prompt(topic: str, source_url: str, source_text: str) -> str:
 def normalize(data: dict, *, source_url: str = "", has_source: bool = False) -> dict:
     """AI 결과를 검사·정리. 필수 구조가 없으면 ValueError."""
     slides = [s for s in data.get("slides", []) if isinstance(s, dict) and str(s.get("headline", "")).strip()]
-    if len(slides) < 3:
-        raise ValueError("슬라이드가 3장 미만입니다")
-    slides = slides[:10]  # 피드 캐러셀은 10장까지만 사용
+    if not slides:
+        raise ValueError("표지가 없습니다")
+    slides = slides[:1]  # 표지 하나만 쓴다 (2장째는 표지 사진을 글자 없이)
     out = []
     for i, s in enumerate(slides):
-        kind = "cover" if i == 0 else ("end" if i == len(slides) - 1 else "body")
+        kind = "cover" if i == 0 else "body"  # 마지막 글자 장(end)은 없앴다 — 설명은 캡션으로
         out.append({
             "kind": kind,
             "headline": str(s.get("headline", "")).replace("\\n", "\n").strip(),

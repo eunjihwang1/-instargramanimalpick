@@ -91,7 +91,7 @@ class TempDataMixin:
 class WriterTests(unittest.TestCase):
     def test_normalize_kinds_and_tags(self):
         d = writer.normalize(AI_JSON, source_url="https://a", has_source=True)
-        self.assertEqual([s["kind"] for s in d["slides"]], ["cover", "body", "body", "end"])
+        self.assertEqual([s["kind"] for s in d["slides"]], ["cover"])  # 표지 하나만 (설명은 캡션)
         self.assertIn("\n", d["slides"][0]["headline"])
         self.assertEqual(d["hashtags"], ["레서판다", "동물원소식"])
         self.assertEqual(d["sources"][0]["url"], "https://a")
@@ -101,9 +101,13 @@ class WriterTests(unittest.TestCase):
         d = writer.normalize(AI_JSON, has_source=False)
         self.assertEqual(d["fact_status"], "unverified")
 
-    def test_too_few_slides(self):
+    def test_no_cover_rejected(self):
         with self.assertRaises(ValueError):
-            writer.normalize({"slides": [{"headline": "a"}]})
+            writer.normalize({"slides": [{"headline": ""}]})
+
+    def test_prompt_requires_formal_style_and_caption_story(self):
+        self.assertIn("합니다체", writer.SYSTEM)
+        self.assertIn("캐러셀은 2장", writer.SYSTEM)
 
     def test_fetch_failure_still_writes_unverified(self):
         def boom(_u):
@@ -355,7 +359,7 @@ class RenderTests(TempDataMixin, unittest.TestCase):
         fake_downloader("", out / "img_01.jpg")
         d["slides"][0]["image"] = {"file": "img_01.jpg", "credit": "Tester / CC0"}
         paths = render.render_draft(d, out)
-        self.assertEqual(len(paths), 4)
+        self.assertEqual(len(paths), 2)  # 표지 + 표지 사진
         for p in paths:
             with Image.open(p) as im:
                 self.assertEqual((im.size, im.format, im.mode), ((1080, 1350), "JPEG", "RGB"))
@@ -365,35 +369,30 @@ class DraftFlowTests(TempDataMixin, unittest.TestCase):
     def test_create_attaches_unique_images(self):
         d = self.make()
         self.assertEqual(d["status"], "draft")
-        self.assertEqual(len(d["slide_files"]), 4)
-        pages = [s["image"]["page_url"] for s in d["slides"] if s.get("image")]
-        self.assertEqual(len(pages), len(set(pages)))
-        self.assertIsNone(d["slides"][-1]["image"])  # 마지막 장은 사진 없음
+        self.assertEqual(d["slide_files"], ["slide_01.jpg", "slide_02.jpg"])
+        self.assertEqual(len(d["slides"]), 1)
+        self.assertEqual(d["slides"][0]["image"]["download_url"], "https://x/red panda0.jpg")
 
-    def test_falls_back_to_cover_query_and_next_candidate(self):
+    def test_cover_tries_next_candidate_then_subject(self):
         def finder(q):
-            return [] if q == "drone" else fake_finder(q)
+            return [] if q == "red panda" else fake_finder(q)  # 표지 검색어 결과 0건
 
         def downloader(url, dest, fallback_url=None):
-            if url == "https://x/red panda0.jpg":
+            if url == "https://x/Red panda0.jpg":
                 raise RuntimeError("429")
             return fake_downloader(url, dest)
-        write = lambda t, u, s: writer.write_draft(t, u, s, asker=fake_asker, fetcher=lambda _u: "본문")
+        data = {**AI_JSON, "image_subject": "Red panda"}
+        write = lambda t, u, s: writer.normalize(data, has_source=True)
         d = drafts.create("주제", "", "", write=write, finder=finder, downloader=downloader, pause=lambda s: None)
-        # 1장: 첫 후보 실패 → 두 번째 후보. 2장: 남은 후보 없음. 3장(drone): 검색 0건 + 표지 후보 소진 → 글자 장
-        self.assertEqual(d["slides"][0]["image"]["download_url"], "https://x/red panda1.jpg")
-        self.assertIsNone(d["slides"][1]["image"])
-        self.assertIsNone(d["slides"][2]["image"])
-        self.assertTrue(any("2장" in w for w in d["warnings"]))
+        # 표지 검색어 0건 → 주인공 이름으로 검색 → 첫 후보 실패 → 두 번째 후보
+        self.assertEqual(d["slides"][0]["image"]["download_url"], "https://x/Red panda1.jpg")
 
-    def test_cover_query_fills_slide_without_results(self):
-        def finder(q):
-            return [] if q == "drone" else fake_finder(q)
-        a = AI_JSON["slides"]
-        custom = {**AI_JSON, "slides": [a[0], {**a[2]}, a[3]]}  # cover(red panda), body(drone), end
-        write = lambda t, u, s: writer.normalize(custom, has_source=True)
-        d = drafts.create("주제2", "", "", write=write, finder=finder, downloader=fake_downloader, pause=lambda s: None)
-        self.assertEqual(d["slides"][1]["image"]["download_url"], "https://x/red panda1.jpg")
+    def test_no_cover_photo_makes_text_second_slide(self):
+        write = lambda t, u, s: writer.normalize(AI_JSON, has_source=True)
+        d = drafts.create("사진없음", "", "", write=write, finder=lambda q: [], downloader=fake_downloader,
+                          pause=lambda s: None)
+        self.assertEqual(len(d["slide_files"]), 2)  # 캐러셀 최소 2장 유지
+        self.assertIsNone(d["slides"][0]["image"])
 
     def test_duplicate_detected(self):
         first = self.make()

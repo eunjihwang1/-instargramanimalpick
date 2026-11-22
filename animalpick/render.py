@@ -197,24 +197,46 @@ def footer_for(draft: dict) -> list[str]:
     return lines
 
 
+def render_photo(photo: str, credit_text: str) -> Image.Image:
+    """글자 없는 사진 장: 1080×1350 꽉 채운 사진 + 오른쪽 아래 작은 저작자 표기만."""
+    canvas = load_photo(photo, (W, H))
+    d = ImageDraw.Draw(canvas)
+    credit(d, H - 8, credit_text)
+    return canvas
+
+
+def caption_preview(draft: dict) -> dict:
+    """사진이 1장도 없을 때 2장째를 채울 글자 장 (캡션 첫 부분)."""
+    paras = [p.strip() for p in draft.get("caption", "").split("\n\n") if p.strip() and not p.startswith("출처")]
+    return {"headline": paras[0] if paras else draft["slides"][0]["headline"],
+            "body": " ".join(paras[1:3])}
+
+
+def plan_pages(draft: dict) -> list[tuple]:
+    """캐러셀은 2장: 표지(제목) → 표지 사진(제목 없이). 설명은 전부 캡션.
+    표지 사진이 없으면 2장째를 캡션 요약 글자 장으로 채운다 (캐러셀은 최소 2장)."""
+    cover = draft["slides"][0]
+    second = ("photo", cover) if cover.get("image") else ("text", caption_preview(draft))
+    return [("cover", cover), second]
+
+
 def render_draft(draft: dict, out_dir: Path) -> list[Path]:
-    """draft['slides'] 를 slide_01.jpg… 로 저장하고 경로 목록 반환."""
+    """plan_pages 순서대로 slide_01.jpg… 로 저장하고 경로 목록 반환."""
     out_dir.mkdir(parents=True, exist_ok=True)
     for old in out_dir.glob("slide_*.jpg"):
         old.unlink()
-    n = len(draft["slides"])
+    pages = plan_pages(draft)
     paths = []
-    for i, slide in enumerate(draft["slides"], 1):
+    for i, (kind, slide) in enumerate(pages, 1):
         image = slide.get("image") or {}
         photo = str(out_dir / image["file"]) if image.get("file") else None
         credit_text = image.get("credit", "")
-        page = f"{i}/{n}"
-        if slide["kind"] == "cover":
-            img = render_cover(slide, photo, credit_text)
-        elif slide["kind"] == "end":
-            img = render_end(slide, page, footer_for(draft))
+        if kind == "cover":
+            img = render_cover({**slide, "body": ""}, photo, credit_text)
+        elif kind == "photo":
+            img = render_photo(photo, credit_text)
         else:
-            img = render_body(slide, photo, credit_text, page)
+            img = render_text_only(slide, f"{i}/{len(pages)}")
         path = out_dir / f"slide_{i:02d}.jpg"
         img.convert("RGB").save(path, "JPEG", quality=92, optimize=True)
         paths.append(path)

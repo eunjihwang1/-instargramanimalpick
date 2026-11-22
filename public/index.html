@@ -141,15 +141,18 @@ function renderDetail() {
     ${warnings.length ? `<div class="warn-box">${warnings.map(esc).join("<br>")}</div>` : ""}
     <div class="slides" style="margin-top:14px">${(d.slide_files || []).map((f) => `<a href="${img(d, f)}" target="_blank"><img src="${img(d, f)}"></a>`).join("")}</div>
     <div class="grid2">
-      <div class="card"><h3>문구 수정</h3>
-        ${d.slides.map((sl, i) => `<div class="slide-edit"><div class="muted">${i + 1}장 · ${sl.kind}${sl.image ? ` · 사진: ${esc(sl.image.credit)} <a href="${esc(sl.image.page_url)}" target="_blank">원본</a>` : ""}</div>
-          <input data-i="${i}" data-k="headline" value="${esc(sl.headline.replace(/\n/g, "\\n"))}" ${locked ? "disabled" : ""}>
-          <textarea data-i="${i}" data-k="body" rows="2" ${locked ? "disabled" : ""}>${esc(sl.body)}</textarea>
-          ${sl.image && !locked ? `<label class="check"><input type="checkbox" data-rm="${i}">이 사진 빼기</label>` : ""}</div>`).join("")}
-        <label>캡션</label><textarea id="caption" rows="5" ${locked ? "disabled" : ""}>${esc(d.caption)}</textarea>
+      <div class="card"><h3>표지 제목</h3>
+        <input data-i="0" data-k="headline" value="${esc(d.slides[0].headline.replace(/\n/g, "\\n"))}" ${locked ? "disabled" : ""}>
+        <div class="muted" style="margin-top:4px">줄바꿈은 \\n 으로 표시됩니다. 캐러셀은 2장입니다: 1장 표지(제목) · 2장 같은 사진(글자 없음).</div>
+        <h3 style="margin-top:18px">설명란 (캡션)</h3>
+        <div class="muted">이야기는 모두 여기에 들어갑니다. 사진 출처와 해시태그는 게시할 때 자동으로 뒤에 붙습니다.</div>
+        <textarea id="caption" rows="16" style="line-height:1.6" ${locked ? "disabled" : ""}>${esc(d.caption)}</textarea>
+        <div class="muted" id="caplen"></div>
         <label>해시태그 (띄어쓰기로 구분)</label><input id="hashtags" value="${esc((d.hashtags || []).join(" "))}" ${locked ? "disabled" : ""}>
-        <div class="row" style="margin-top:10px"><button class="ghost" id="save" ${locked ? "disabled" : ""}>수정 반영 + 다시 그리기</button></div>
-        <div class="muted" style="margin-top:6px">제목 줄바꿈은 \\n 으로 표시됩니다.</div>
+        <h3 style="margin-top:18px">사진</h3>
+        ${d.slides.map((sl, i) => sl.kind === "end" ? "" : `<div class="slide-edit"><div class="muted">${i === 0 ? "표지 사진" : "사진 " + i} · ${esc(sl.headline.replace(/\n/g, " "))}${sl.image ? `<br>${esc(sl.image.credit)} · <a href="${esc(sl.image.page_url)}" target="_blank">원본 보기</a>` : "<br>사진 없음 (캐러셀에서 빠짐)"}</div>
+          ${sl.image && !locked ? `<label class="check"><input type="checkbox" data-rm="${i}">이 사진 빼기</label>` : ""}</div>`).join("")}
+        <div class="row" style="margin-top:12px"><button class="ghost" id="save" ${locked ? "disabled" : ""}>수정 반영 + 다시 그리기</button></div>
       </div>
       <div>
         <div class="card"><h3>검수</h3>
@@ -176,13 +179,20 @@ function renderDetail() {
         </div>
       </div>
     </div>`;
+  const showLen = () => {
+    const n = $("#caption")?.value.length || 0;
+    // 인스타 캡션 한도 2,200자. 사진 출처·해시태그가 뒤에 붙으므로 본문은 1,800자 안쪽 권장
+    $("#caplen").textContent = `본문 ${n}자 ${n > 1800 ? "— 너무 깁니다. 사진 출처·해시태그 자리가 부족할 수 있습니다." : "(권장 400~900자)"}`;
+  };
+  $("#caption")?.addEventListener("input", showLen);
+  showLen();
   const checklist = () => Object.fromEntries([...document.querySelectorAll("[data-ck]")].map((el) => [el.dataset.ck, el.checked]));
   $("#save")?.addEventListener("click", () => busy("다시 그리는 중…", async () => {
-    const slides = d.slides.map((_, i) => ({
-      headline: document.querySelector(`[data-i="${i}"][data-k="headline"]`).value.replace(/\\n/g, "\n"),
-      body: document.querySelector(`[data-i="${i}"][data-k="body"]`).value,
-      remove_image: document.querySelector(`[data-rm="${i}"]`)?.checked || false,
-    }));
+    const slides = d.slides.map((_, i) => {
+      const s = { remove_image: document.querySelector(`[data-rm="${i}"]`)?.checked || false };
+      if (i === 0) s.headline = document.querySelector(`[data-i="0"][data-k="headline"]`).value.replace(/\\n/g, "\n");
+      return s;
+    });
     await api("PUT", `/api/drafts/${d.id}`, { slides, caption: $("#caption").value, hashtags: $("#hashtags").value.split(/\s+/) });
     await refresh(d.id);
   }));
