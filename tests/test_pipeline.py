@@ -547,6 +547,18 @@ class DraftFlowTests(TempDataMixin, unittest.TestCase):
         self.assertEqual(e["slides"][0]["headline"], "새 제목")
         self.assertEqual(e["hashtags"], ["가", "나"])
 
+    def test_removed_image_can_be_restored(self):
+        d = self.make()
+        before = d["slides"][0]["image"]
+        r = drafts.update_content(d["id"], {"slides": [{"remove_image": True}]})
+        self.assertIsNone(r["slides"][0]["image"])
+        self.assertEqual(r["slides"][0]["removed_image"], before)
+        self.assertTrue((drafts.draft_dir(d["id"]) / before["file"]).exists())  # 파일은 그대로
+        r2 = drafts.update_content(d["id"], {"slides": [{"restore_image": True}]})
+        self.assertEqual(r2["slides"][0]["image"], before)
+        self.assertNotIn("removed_image", r2["slides"][0])
+        self.assertEqual(len(r2["slide_files"]), len(d["slide_files"]))
+
     def test_publish_requires_approval(self):
         d = self.make()
         with self.assertRaises(ValueError):

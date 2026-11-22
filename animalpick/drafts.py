@@ -195,8 +195,14 @@ def update_content(draft_id: str, patch: dict) -> dict:
             for key in ("headline", "body"):
                 if key in s:
                     draft["slides"][i][key] = str(s[key])
-            if s.get("remove_image"):
-                draft["slides"][i]["image"] = None
+            slide = draft["slides"][i]
+            if s.get("remove_image") and slide.get("image"):
+                # 뺀 사진 정보는 버리지 않고 보관 → '사진 되돌리기'로 복구 (파일도 지우지 않는다)
+                slide["removed_image"] = slide["image"]
+                slide["image"] = None
+            elif s.get("restore_image") and slide.get("removed_image") and not slide.get("image"):
+                if (draft_dir(draft_id) / slide["removed_image"]["file"]).exists():
+                    slide["image"] = slide.pop("removed_image")
     for key in ("caption",):
         if key in patch:
             draft[key] = str(patch[key])
