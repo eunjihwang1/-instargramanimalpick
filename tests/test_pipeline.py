@@ -53,8 +53,13 @@ def fake_finder(query):
 
 
 def fake_downloader(url, dest, fallback_url=None):
+    """주소마다 다른 무늬의 사진 (같은 주소면 같은 사진) — 중복 사진 판별이 동작하도록."""
+    import random
     dest.parent.mkdir(parents=True, exist_ok=True)
-    Image.new("RGB", (1600, 1200), (120, 90, 60)).save(dest, "JPEG")
+    rnd = random.Random(url)
+    small = Image.new("RGB", (9, 8))
+    small.putdata([tuple(rnd.randrange(256) for _ in range(3)) for _ in range(72)])
+    small.resize((1600, 1200), Image.NEAREST).save(dest, "JPEG")
     return dest
 
 
@@ -107,7 +112,7 @@ class WriterTests(unittest.TestCase):
 
     def test_prompt_requires_formal_style_and_caption_story(self):
         self.assertIn("합니다체", writer.SYSTEM)
-        self.assertIn("캐러셀 기본은 2장", writer.SYSTEM)
+        self.assertIn("관련 사진 3장", writer.SYSTEM)
 
     def test_fetch_failure_still_writes_unverified(self):
         def boom(_u):
@@ -260,10 +265,10 @@ class PexelsTests(unittest.TestCase):
 
         def boom(q):
             raise RuntimeError("429")
-        self.assertEqual(images.search("x", commons=lambda q: c, pexels=lambda q: p), c + p)
-        self.assertEqual(images.search("x", commons=boom, pexels=lambda q: p), p)
+        self.assertEqual(images.search("x", commons=lambda q: c, pexels=lambda q: p, pixabay=lambda q: [], nasa=lambda q: []), c + p)
+        self.assertEqual(images.search("x", commons=boom, pexels=lambda q: p, pixabay=lambda q: [], nasa=lambda q: []), p)
         with self.assertRaises(RuntimeError):
-            images.search("x", commons=boom, pexels=lambda q: [])
+            images.search("x", commons=boom, pexels=lambda q: [], pixabay=lambda q: [], nasa=lambda q: [])
 
     def test_credits_grouped_by_source(self):
         slides = [
@@ -337,7 +342,7 @@ class PixabayTests(unittest.TestCase):
 
     def test_combined_three_sources(self):
         c, p, x = [{"page_url": "c"}], [{"page_url": "p"}], [{"page_url": "x"}]
-        self.assertEqual(images.search("q", commons=lambda q: c, pexels=lambda q: p, pixabay=lambda q: x), c + p + x)
+        self.assertEqual(images.search("q", commons=lambda q: c, pexels=lambda q: p, pixabay=lambda q: x, nasa=lambda q: []), c + p + x)
 
 
 class SubjectFilterTests(TempDataMixin, unittest.TestCase):
@@ -458,7 +463,7 @@ class KeyImageTests(TempDataMixin, unittest.TestCase):
             return fake_finder(q)
         d = self._create(finder)
         self.assertEqual(d["slides"][1]["image"]["download_url"], "https://x/scat.jpg")
-        self.assertEqual(d["slide_files"], ["slide_01.jpg", "slide_02.jpg", "slide_03.jpg"])
+        # 핵심 사진(똥) + 같은 주인공 사진 2장 → 표지 + 사진 모음 1장, 모음의 첫 칸이 핵심 사진`n        self.assertEqual(d["slide_files"], ["slide_01.jpg", "slide_02.jpg"])`n        from animalpick import render`n        self.assertEqual(render.collage_photos(d)[0]["download_url"], "https://x/scat.jpg")
 
     def test_key_photo_missing_stays_two_slides(self):
         d = self._create(lambda q: [] if q.startswith("wombat") else fake_finder(q))  # 핵심 장면 사진 없음

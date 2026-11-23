@@ -30,21 +30,41 @@ UA = "Mozilla/5.0 (compatible; AnimalPick/0.1; local editorial tool)"
 # 2026-11-22 실측으로 작동·동물 기사 확인된 피드만 (EurekAlert·정책브리핑·한겨레 애니멀피플·KBS RSS 는 404,
 # Google 뉴스는 이용 조건 불명확, 네이버 검색 API 는 신규 앱에서 선택 불가로 확인됨 — 키가 이미 있을 때만 사용)
 FEEDS = [
-    ("news_intl", "Phys.org 동식물", "https://phys.org/rss-feed/biology-news/plants-animals/"),
-    ("news_intl", "Phys.org 생태", "https://phys.org/rss-feed/biology-news/ecology/"),
-    ("news_intl", "ScienceDaily 동물", "https://www.sciencedaily.com/rss/plants_animals/animals.xml"),
-    ("news_intl", "Guardian 동물", "https://www.theguardian.com/world/animals/rss"),
-    ("news_intl", "Guardian 야생동물", "https://www.theguardian.com/environment/wildlife/rss"),
-    ("news_intl", "Mongabay", "https://news.mongabay.com/feed/"),
-    ("news_intl", "UPI 별난 뉴스", "https://rss.upi.com/news/odd_news.rss"),
-    ("news_intl", "Good News Network 동물", "https://www.goodnewsnetwork.org/category/news/animals/feed/"),
-    ("news_intl", "Live Science", "https://www.livescience.com/feeds/all"),
-    ("news_intl", "NYT 과학", "https://rss.nytimes.com/services/xml/rss/nyt/Science.xml"),
-    ("news_intl", "BBC 과학·환경", "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml"),
-    ("news_intl", "Smithsonian 과학·자연", "https://www.smithsonianmag.com/rss/science-nature/"),
-    ("news_kr", "연합뉴스 사회", "https://www.yna.co.kr/rss/society.xml"),
-    ("news_kr", "뉴스펭귄", "https://www.newspenguin.com/rss/allArticle.xml"),  # 환경·멸종위기종 전문, 주 7건 안팎
+    # 동물 (동물 키워드로 거름)
+    ("news_intl", "Phys.org 동식물", "https://phys.org/rss-feed/biology-news/plants-animals/", "animal"),
+    ("news_intl", "Phys.org 생태", "https://phys.org/rss-feed/biology-news/ecology/", "animal"),
+    ("news_intl", "ScienceDaily 동물", "https://www.sciencedaily.com/rss/plants_animals/animals.xml", "animal"),
+    ("news_intl", "Guardian 동물", "https://www.theguardian.com/world/animals/rss", "animal"),
+    ("news_intl", "Guardian 야생동물", "https://www.theguardian.com/environment/wildlife/rss", "animal"),
+    ("news_intl", "Mongabay", "https://news.mongabay.com/feed/", "animal"),
+    ("news_kr", "뉴스펭귄", "https://www.newspenguin.com/rss/allArticle.xml", "animal"),  # 환경·멸종위기종 전문
+    # 신기한 세상 이야기 (2026-11-23 사용자 요청으로 확장: 과학·우주·기술·별난 소식·문화. 금지어만 거름)
+    ("news_intl", "ScienceDaily 별난 과학", "https://www.sciencedaily.com/rss/strange_offbeat.xml", "broad"),
+    ("news_intl", "ScienceDaily 최신 과학", "https://www.sciencedaily.com/rss/top/science.xml", "broad"),
+    ("news_intl", "Phys.org 우주", "https://phys.org/rss-feed/space-news/", "broad"),
+    ("news_intl", "NASA 소식", "https://www.nasa.gov/feed/", "broad"),
+    ("news_intl", "Space.com", "https://www.space.com/feeds/all", "broad"),
+    ("news_intl", "Live Science", "https://www.livescience.com/feeds/all", "broad"),
+    ("news_intl", "Guardian 과학", "https://www.theguardian.com/science/rss", "broad"),
+    ("news_intl", "BBC 과학·환경", "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml", "broad"),
+    ("news_intl", "NYT 과학", "https://rss.nytimes.com/services/xml/rss/nyt/Science.xml", "broad"),
+    ("news_intl", "Smithsonian 과학·자연", "https://www.smithsonianmag.com/rss/science-nature/", "broad"),
+    ("news_intl", "New Atlas", "https://newatlas.com/index.rss", "broad"),
+    ("news_intl", "IEEE Spectrum 로봇", "https://spectrum.ieee.org/feeds/topic/robotics.rss", "broad"),
+    ("news_intl", "Atlas Obscura", "https://www.atlasobscura.com/feeds/latest", "broad"),
+    ("news_intl", "UPI 별난 뉴스", "https://rss.upi.com/news/odd_news.rss", "broad"),
+    ("news_intl", "Good News Network", "https://www.goodnewsnetwork.org/feed/", "broad"),
+    ("news_kr", "연합뉴스 국제", "https://www.yna.co.kr/rss/international.xml", "broad"),
+    ("news_kr", "연합뉴스 문화", "https://www.yna.co.kr/rss/culture.xml", "broad"),
+    ("news_kr", "연합뉴스 사회", "https://www.yna.co.kr/rss/society.xml", "animal"),
 ]
+BROAD_CAP = 20  # 넓은 피드는 최신 20개만 AI 평가로 (비용·시간 관리)
+# 제목만 봐도 애니멀픽에서 다루지 않을 소재 (AI 평가 전에 미리 거름)
+BLOCK_EN = re.compile(r"\b(sex|sexual|porn|nude|rape|murder|murdered|killed|killing|shooting|stabbing|terror|war|"
+                      r"election|president|senate|congress|trump|tariff|stocks?|shares|earnings|ipo|lawsuit|"
+                      r"cancer|diabetes|vaccine|drug|overdose|suicide|abuse)\b", re.I)
+BLOCK_KO = re.compile(r"성관계|성폭|성범죄|살해|살인|숨진|사망|흉기|총격|테러|전쟁|대통령|국회|선거|여당|야당|"
+                      r"증시|주가|환율|금리|관세|소송|마약|자살|학대|암 치료|치매")
 NAVER_QUERIES = ["멸종위기 동물", "야생동물 발견", "동물원 새끼", "동물 구조", "신종 발견", "철새", "고래 돌고래", "희귀 동물"]
 
 ANIMAL_EN = re.compile(r"\b(animal|bird|fish|shark|whale|dolphin|penguin|bear|wolf|fox|cat|dog|lion|tiger|elephant|monkey|ape|chimp|chimpanzee|gorilla|frog|toad|snake|lizard|turtle|tortoise|insect|bee|ant|spider|octopus|squid|crab|owl|parrot|bat|mouse|rat|deer|horse|pig|seal|otter|panda|koala|kangaroo|species|wildlife|mammal|reptile|amphibian|predator|crocodile|alligator|eagle|hawk|crow|raven|jellyfish|coral|butterfly|moth|beetle|salamander|axolotl|hippo|giraffe|zebra|rhino|leopard|cheetah|jaguar|hyena|seabird|songbird|baboon|lemur|sloth|squirrel|rabbit|hedgehog|orca|manatee|walrus|puffin|flamingo|pelican|swan|goose|duck|hummingbird|gecko|chameleon|iguana|cicada|firefly|scorpion|snail|slug|starfish|seahorse|eel|salmon|tuna|cod|herring|ray|sea\s+lion|sea\s+turtle|coyote|moose|bison|camel|llama|goat|sheep|cow|chicken|primate|rodent|dinosaur)s?\b", re.I)
@@ -52,6 +72,7 @@ ANIMAL_KO = re.compile(r"동물|새끼|고양이|강아지|반려|멸종|야생|
 
 WEIGHTS = {"curiosity": 1.3, "emotion": 1.2, "share": 1.2, "korea": 1.0, "visual": 1.0, "factual": 1.3}
 DAILY_MIX = {"news_intl": 5, "news_kr": 2, "evergreen": 3}  # 하루 10개 목표 구성
+CATEGORY_CAP = 4  # 하루 선정에서 한 분야(예: 동물)는 최대 4개 — 여러 분야가 섞이게
 NEWS_DAYS = 7
 
 
@@ -122,17 +143,28 @@ def looks_animal(title: str) -> bool:
     return bool(ANIMAL_KO.search(title) if re.search(r"[가-힣]", title) else ANIMAL_EN.search(title))
 
 
+def blocked(title: str) -> bool:
+    return bool(BLOCK_KO.search(title) if re.search(r"[가-힣]", title) else BLOCK_EN.search(title))
+
+
 def collect_feeds(*, fetch=_get, now: datetime | None = None, log=print) -> list[dict]:
     now = now or datetime.now(timezone.utc)
     out = []
-    for kind, name, url in FEEDS:
+    for feed in FEEDS:
+        kind, name, url = feed[:3]
+        mode = feed[3] if len(feed) > 3 else "animal"
         try:
             items = parse_feed(fetch(url))
         except Exception as exc:
             log(f"  [건너뜀] {name}: {type(exc).__name__}")
             continue
-        keep = [i for i in items if is_recent(i["published"], now) and looks_animal(i["title"])]
-        log(f"  {name}: {len(items)}개 중 동물 기사 {len(keep)}개")
+        recent = [i for i in items if is_recent(i["published"], now) and not blocked(i["title"])]
+        if mode == "animal":
+            keep = [i for i in recent if looks_animal(i["title"])]
+            log(f"  {name}: {len(items)}개 중 동물 기사 {len(keep)}개")
+        else:
+            keep = recent[:BROAD_CAP]
+            log(f"  {name}: {len(items)}개 중 {len(keep)}개")
         for i in keep:
             out.append({"kind": kind, "source": name, "title": i["title"], "link": i["link"],
                         "published_at": i["published"].isoformat() if i["published"] else None})
@@ -170,11 +202,12 @@ def collect_naver(*, fetch=_get, now: datetime | None = None, log=print) -> list
     return out
 
 
-EVERGREEN_SYSTEM = """너는 한국어 인스타그램 동물 매거진 '애니멀픽'의 기획자다.
-뉴스가 아니어도 언제 올려도 통하는 '신기한 동물 이야기' 소재를 제안한다.
-조건: 실제로 위키백과(영어)에 문서가 있는 동물, 한 가지 놀라운 사실로 이야기가 되는 것,
-사진이 흔한 종, 잔혹·질병·정치 소재 제외, [이미 다룬 동물] 목록과 겹치지 않을 것.
-JSON 하나만: {"items":[{"subject":"영어 일반 이름","wiki_title":"영어 위키백과 문서 제목","angle":"한국어 한 줄 관점"}]}"""
+EVERGREEN_SYSTEM = """너는 한국어 인스타그램 매거진 '애니멀픽'의 기획자다. 애니멀픽은 '신기한 세상 이야기'를 다룬다.
+뉴스가 아니어도 언제 올려도 통하는 소재를 제안한다. 분야를 고르게 섞는다:
+동물, 자연현상(오로라·싱크홀 등), 우주, 신기한 장소·건축, 발명·기술·로봇, 세계의 별난 문화·축제·음식, 역사 속 미스터리.
+조건: 실제로 영어 위키백과에 문서가 있는 주제, 한 가지 놀라운 사실로 이야기가 되는 것, 사진(자료 사진)이 흔한 주제,
+잔혹·질병·정치·성적인 소재와 실존 개인이 주인공인 이야기 제외, [이미 다룬 주제] 목록과 겹치지 않을 것.
+JSON 하나만: {"items":[{"subject":"영어 이름(동물·사물·장소·현상)","wiki_title":"영어 위키백과 문서 제목","angle":"한국어 한 줄 관점"}]}"""
 
 
 def wiki_exists(title: str, *, fetch=_get) -> str | None:
@@ -191,7 +224,7 @@ def wiki_exists(title: str, *, fetch=_get) -> str | None:
 def collect_evergreen(n: int, used_subjects: list[str], *, asker=claude.ask, fetch=_get, log=print) -> list[dict]:
     if n <= 0:
         return []
-    prompt = f"[제안 개수]\n{n + 3}\n\n[이미 다룬 동물]\n" + (", ".join(used_subjects[-200:]) or "없음")
+    prompt = f"[제안 개수]\n{n + 3}\n\n[이미 다룬 주제]\n" + (", ".join(used_subjects[-200:]) or "없음")
     try:
         data = claude.ask_json(EVERGREEN_SYSTEM, prompt, asker=asker)
     except Exception as exc:
@@ -233,17 +266,22 @@ def dedupe(items: list[dict], conn) -> list[dict]:
 
 # ---------- 3. AI 점수 ----------
 
-SCORE_SYSTEM = """너는 한국어 인스타그램 동물 매거진 '애니멀픽'의 기획자다. 후보 목록을 평가한다.
-애니멀픽 형식: 표지 사진 1장 + 같은 사진 1장, 이야기는 캡션. 사진은 허락된 자료 사진(그 종의 사진)만 쓴다.
-점수 1~5 정수: curiosity(호기심), emotion(귀여움·놀라움·뭉클함), share(친구에게 보내고 싶음),
-korea(한국 독자 관심·국내에 덜 알려짐), visual(종 사진 한 장으로 눈길을 끌 수 있음), factual(믿을 만한 출처·과장 위험 낮음).
-needs_event_photo: 이야기가 '그 특정 개체·장면'의 사진 없이는 성립하지 않으면 true
-  (예: 뿔이 하나인 특정 사슴, 특정 동물원의 특정 개체 외모가 핵심). 종 일반 사진으로 충분하면 false.
-exclude=true: 정치, 잔혹·사체·학대, 의료·건강 주장, 칼럼·퀴즈·행사·행정 소식, 동물 이야기가 아닌 것, 목록 안 중복.
-subject: 주인공 동물의 영어 일반 이름. photo_query: 그 동물 사진 검색어(영어 2~4단어).
+SCORE_SYSTEM = """너는 한국어 인스타그램 매거진 '애니멀픽'의 기획자다. 애니멀픽은 '신기한 세상 이야기'를 다룬다:
+동물, 과학, 우주, 자연현상, 기술·로봇·발명, 세계의 별난 소식·문화·축제·음식, 역사. 후보 목록을 평가한다.
+애니멀픽 형식: 표지(사진+제목) 1장 + 관련 사진 모음, 이야기는 캡션. 사진은 허락된 자료 사진만 쓴다
+(위키미디어·NASA·무료 사진 사이트. 뉴스 사진·특정 인물 사진은 쓸 수 없다).
+점수 1~5 정수: curiosity(호기심), emotion(귀여움·놀라움·경이·뭉클함), share(친구에게 보내고 싶음),
+korea(한국 독자 관심·국내에 덜 알려짐), visual(자료 사진으로 눈길을 끌 수 있음), factual(믿을 만한 출처·과장 위험 낮음).
+needs_event_photo: 이야기가 '그 특정 개체·사람·사건 현장'의 사진 없이는 성립하지 않으면 true
+  (예: 뿔이 하나인 특정 사슴, 특정 인물의 외모·변화, 특정 사고 현장). 주제 일반 자료 사진으로 충분하면 false.
+exclude=true: 성적인 소재, 범죄·사고·재난의 피해자나 실존 일반인이 주인공인 이야기, 정치·선거·전쟁,
+  잔혹·사체·학대, 의료·건강·다이어트 주장, 기업 실적·주식·제품 광고·출시, 연예인 가십,
+  칼럼·퀴즈·행사·행정 소식, 목록 안 중복.
+category: animal / science / space / nature / tech / world / culture / food / history 중 하나.
+subject: 주인공(동물·사물·장소·현상)의 영어 이름. photo_query: 그 주인공 사진 검색어(영어 2~4단어).
 ko_title: 표지 제목 초안(22자 이내, 명사형 또는 합니다체, '-다'로 끝내지 않음).
 JSON 하나만: {"items":[{"i":번호,"exclude":false,"needs_event_photo":false,"reason":"한 줄 평 또는 제외 이유",
-"subject":"","photo_query":"","ko_title":"","curiosity":0,"emotion":0,"share":0,"korea":0,"visual":0,"factual":0}]}"""
+"category":"","subject":"","photo_query":"","ko_title":"","curiosity":0,"emotion":0,"share":0,"korea":0,"visual":0,"factual":0}]}"""
 
 
 def weighted(item: dict) -> float:
@@ -280,6 +318,7 @@ def score_items(items: list[dict], *, asker=claude.ask, chunk: int = 40, log=pri
                         "ko_title": str(r.get("ko_title", "")).strip(),
                         "subject": str(r.get("subject", "") or p.get("subject_hint", "")).strip(),
                         "photo_query": str(r.get("photo_query", "")).strip(),
+                        "category": str(r.get("category", "")).strip().lower(),
                         "scores": {k: r.get(k) for k in WEIGHTS},
                         "score": weighted(r),
                         "status": "excluded" if excluded else "new",
@@ -323,11 +362,11 @@ def save(conn, items: list[dict]) -> int:
         conn.execute(
             """INSERT OR IGNORE INTO candidates
                (id, kind, source, title, title_key, link, published_at, collected_at, ko_title, subject, photo_query,
-                scores, score, photos, status, reason)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                scores, score, photos, status, reason, category)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (it["id"], it["kind"], it["source"], it["title"], it["title_key"], it["link"], it.get("published_at"), ts,
              it.get("ko_title"), it.get("subject"), it.get("photo_query"), json.dumps(it.get("scores") or {}),
-             it.get("score"), it.get("photos"), it.get("status", "new"), it.get("reason")))
+             it.get("score"), it.get("photos"), it.get("status", "new"), it.get("reason"), it.get("category")))
     conn.commit()
     return len(items)
 
@@ -364,6 +403,9 @@ def pick_daily(cands: list[dict], mix: dict | None = None) -> list[dict]:
         # 'red crab' 과 'Christmas Island red crab' 처럼 한쪽 이름이 다른 쪽에 포함되면 같은 동물로 본다
         w = words(c.get("subject") or "")
         if c in chosen or (w and any(w <= t or t <= w for t in taken)):
+            return False
+        cat = c.get("category") or ""
+        if cat and sum(1 for x in chosen if x.get("category") == cat) >= CATEGORY_CAP:
             return False
         chosen.append(c)
         if w:

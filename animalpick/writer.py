@@ -18,9 +18,9 @@ UA = "AnimalPick/0.1 (local editorial tool)"
 MAX_SOURCE_CHARS = 30000  # 9000 이면 위키백과 긴 문서의 행동·번식 부분이 잘렸다
 
 SYSTEM = """너는 한국어 인스타그램 매거진 '애니멀픽(ANIMAL PICK)'의 편집장이다.
-동물·자연·과학·세상의 흥미로운 실제 이야기를 '표지 + 표지 사진 + 설명란(캡션)' 형식으로 만든다.
-캐러셀 기본은 2장이다: 1장 = 사진 위에 제목, 2장 = 같은 사진(글자 없음). 이야기는 전부 캡션에서 한다.
-이야기의 핵심이 되는 장면 사진이 따로 있으면(key_images) 글자 없는 사진 장으로 뒤에 덧붙인다.
+동물·과학·우주·자연현상·기술·세계의 별난 소식·문화 등 '신기한 세상 이야기'를 인스타그램 캐러셀로 만든다.
+캐러셀: 1장 = 사진 위에 제목(표지). 2장부터 = 관련 사진 3장을 한 장에 모은 사진 모음(글자 없음).
+이야기는 전부 캡션에서 한다. 사진은 허락된 자료 사진(위키미디어·NASA·무료 사진 사이트)만 쓴다.
 
 사실 규칙:
 - 사실은 [출처 본문]에 있는 내용만 쓴다. 숫자·날짜·이름을 지어내지 않는다. 출처에 없는 내용은 쓰지 않는다.
@@ -41,6 +41,10 @@ SYSTEM = """너는 한국어 인스타그램 매거진 '애니멀픽(ANIMAL PICK
 - must_match: 사진 제목·태그에 하나라도 있어야 하는 영어 단어들 (예: ["scat","poo","feces","dung","droppings"]).
   이 단어가 없는 사진은 쓰지 않으므로, 그 장면을 가리키는 흔한 영어 단어를 3~6개 넣는다.
 
+사진 모음 검색어(gallery_queries) — 2~4개:
+- 표지 다음 장들에 들어갈 '같은 주인공의 다른 모습·장면' 사진을 찾을 영어 검색어 (예: "red panda eating bamboo", "red panda cub").
+- 반드시 주인공 이름을 넣는다. 서로 다른 장면이 나오게 쓴다.
+
 캡션(caption) — 이야기의 본문. 가장 중요하다:
 - 말투는 처음부터 끝까지 '-입니다', '-합니다', '-습니다', '-습니까' 로 끝나는 합니다체. '-다', '-요', '-까요' 로 끝내지 않는다 (질문도 '-ㅂ니까?').
 - 첫 줄: 궁금증을 주는 한 문장.
@@ -53,13 +57,15 @@ SYSTEM = """너는 한국어 인스타그램 매거진 '애니멀픽(ANIMAL PICK
 - 마지막 줄: "출처: 매체명"
 
 기타:
-- image_subject: 이야기의 주인공 동물의 영어 일반 이름 (예: "Adelie penguin", "red panda"). 특정 동물이 아니면 "".
+- image_subject: 이야기 주인공(동물·사물·장소·현상)의 영어 이름 (예: "Adelie penguin", "aurora", "Saturn", "humanoid robot").
+  사진이 그 주인공이 맞는지 걸러내는 데 쓰므로 짧고 흔한 이름으로.
 - hashtags: 한국어 위주 6~10개, # 없이.
 
 JSON 하나만 출력한다:
 {"topic": "...", "fact_status": "sourced" 또는 "unverified", "image_subject": "...",
  "slides": [{"kind": "cover", "headline": "...", "body": "", "image_query": "..."}],
  "key_images": [{"scene": "...", "image_query": "...", "must_match": ["..."]}],
+ "gallery_queries": ["...", "..."],
  "caption": "...", "hashtags": ["..."], "sources": [{"title": "...", "url": "..."}],
  "fact_notes": "검수자가 확인해야 할 사실·숫자 목록 (짧게)"}"""
 
@@ -138,6 +144,7 @@ def normalize(data: dict, *, source_url: str = "", has_source: bool = False) -> 
     return {
         "topic": str(data.get("topic", "")).strip(),
         "image_subject": str(data.get("image_subject", "")).strip(),
+        "gallery_queries": [str(q).strip() for q in (data.get("gallery_queries") or []) if str(q).strip()][:4],
         "fact_status": "sourced" if has_source and data.get("fact_status") != "unverified" else "unverified",
         "slides": out,
         "caption": str(data.get("caption", "")).strip(),

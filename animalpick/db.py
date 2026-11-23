@@ -79,6 +79,11 @@ def connect(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    # 나중에 추가된 칸 (기존 DB 에도 붙인다)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(candidates)")}
+    if "category" not in cols:
+        conn.execute("ALTER TABLE candidates ADD COLUMN category TEXT")
+        conn.commit()
     return conn
 
 

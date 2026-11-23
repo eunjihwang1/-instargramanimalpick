@@ -23,7 +23,7 @@ from pathlib import Path
 import re
 import time
 from urllib.error import HTTPError
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 from PIL import Image, ImageOps
@@ -34,7 +34,8 @@ API = "https://commons.wikimedia.org/w/api.php"
 PEXELS_API = "https://api.pexels.com/v1/search"
 PIXABAY_API = "https://pixabay.com/api/"
 PIXABAY_CACHE = config.DATA / "cache" / "pixabay"
-SOURCE_LABEL = {"wikimedia_commons": "Wikimedia Commons", "pexels": "Pexels", "pixabay": "Pixabay"}
+SOURCE_LABEL = {"wikimedia_commons": "Wikimedia Commons", "nasa": "NASA", "pexels": "Pexels", "pixabay": "Pixabay"}
+NASA_API = "https://images-api.nasa.gov/search"
 UA = "AnimalPick/0.1 (local editorial tool; contact via project owner)"
 MIN_WIDTH = 900
 MAX_BYTES = 30_000_000
@@ -238,6 +239,28 @@ GENERIC_MODIFIERS = {"common", "european", "american", "african", "asian", "nort
                      "western", "greater", "lesser", "little", "great", "giant", "wild", "bare", "nosed"}
 
 
+def has_subject(item: dict, subject: str) -> bool:
+    """사진 제목·태그에 주인공 이름이 있는지.
+    사진 사이트: 태그가 느슨하다 → 'sea otter' 면 sea·otter 모두 있어야 (동물원 수달 사진 방지).
+    위키미디어·NASA: 'common' 같은 흔한 수식어는 빼고, 나머지 이름이 '붙어서 순서대로' 있어야
+    ('Wombat Poop.jpg' 는 common wombat 으로 통과, 'OTTER ROCK, OREGON COAST ... SEA' 는 sea otter 로 통과 못 함)."""
+    need = _words(subject)
+    if not need:
+        return True
+    if item.get("source") in STOCK_SOURCES:
+        return need <= _words(item.get("title", ""))
+    parts = [w for w in re.findall(r"[a-z]+", subject.lower()) if w not in GENERIC_MODIFIERS] or \
+        re.findall(r"[a-z]+", subject.lower())
+    title = " ".join(re.findall(r"[a-z]+", item.get("title", "").lower()))
+    phrase = r"\b" + r"\s+".join(re.escape(p) + r"s?" for p in parts) + r"\b"
+    return bool(re.search(phrase, title))
+
+
+def matches_photo(item: dict, subject: str) -> bool:
+    """사진 모음용: 불편한 사진·AI 그림이 아니고 주인공 이름이 확인되는 사진."""
+    return not is_sensitive(item) and not is_artwork(item) and has_subject(item, subject)
+
+
 def matches_key(item: dict, must_match: list[str], subject: str) -> bool:
     """핵심 장면 사진: 제목·태그에 핵심 단어 하나 이상 + 주인공 동물 이름의 핵심 단어가 있어야 한다.
     (예: 'File:Wombat scat cube.jpg' → scat + wombat). 어느 출처든 같은 기준. 불편한 사진은 제외."""
@@ -248,27 +271,47 @@ def matches_key(item: dict, must_match: list[str], subject: str) -> bool:
     # 'poo' 로 'poop' 도 잡는다 (한 글자 더 긴 경우만 — 'rock' 이 'rocket' 에 걸리지 않게)
     if not any(w == t or (len(t) >= 3 and w.startswith(t) and len(w) - len(t) <= 1) for w in words for t in terms):
         return False
-    need = _words(subject)
-    if not need:
-        return True
-    if item.get("source") in STOCK_SOURCES:
-        # 사진 사이트는 태그가 느슨하다: 'sea otter' 면 sea·otter 모두 있어야 (동물원 수달 사진 방지)
-        return need <= words
-    # 위키미디어: 'common' 같은 흔한 수식어는 빼고, 나머지 이름이 '붙어서 순서대로' 있어야 한다
-    # ('Wombat Poop.jpg' 는 common wombat 으로 통과. 'OTTER ROCK, OREGON COAST ... SEA ...' 는
-    #  sea 와 otter 가 떨어져 있어 sea otter 로 통과 못 함 — 2026-11-22 실제로 붙었던 지명 사진)
-    parts = [w for w in re.findall(r"[a-z]+", subject.lower()) if w not in GENERIC_MODIFIERS] or \
-        re.findall(r"[a-z]+", subject.lower())
-    title = " ".join(re.findall(r"[a-z]+", item.get("title", "").lower()))
-    phrase = r"\b" + r"\s+".join(re.escape(p) + r"s?" for p in parts) + r"\b"
-    return bool(re.search(phrase, title))
+    return has_subject(item, subject)
 
 
-def search(query: str, *, commons=None, pexels=None, pixabay=None) -> list[dict]:
-    """위키미디어 → Pexels → Pixabay 순. 한쪽이 실패해도 다른 쪽 결과는 쓴다.
+def search_nasa(query: str, *, limit: int = 15, opener=urlopen) -> list[dict]:
+    """NASA 이미지 (images.nasa.gov). NASA 가 만든 이미지는 미국 정부 저작물로 대부분 저작권이 없다.
+    단 NASA 가 아닌 제3자 저작권 표시가 있는 것(제목·설명에 ©/copyright)은 뺀다. NASA 로고·보증 암시 금지."""
+    if not query.strip():
+        return []
+    url = f"{NASA_API}?{urlencode({'q': query, 'media_type': 'image', 'page_size': limit})}"
+    with opener(Request(url, headers={"User-Agent": UA}), timeout=20) as resp:
+        data = json.load(resp)
+    out = []
+    for it in (data.get("collection") or {}).get("items", []):
+        meta = (it.get("data") or [{}])[0]
+        thumb = next((l.get("href") for l in it.get("links", []) if l.get("rel") == "preview"), "")
+        text = f"{meta.get('title', '')} {meta.get('description', '')[:300]}"
+        if not thumb or re.search(r"©|copyright", text, re.I):
+            continue
+        nid = meta.get("nasa_id", "")
+        center = meta.get("center") or ""
+        out.append({
+            "title": meta.get("title", "") + " " + " ".join(meta.get("keywords") or []),
+            "download_url": thumb.replace("~thumb", "~large"),
+            "original_url": thumb.replace("~thumb", "~orig"),
+            "original_bytes": None,
+            "page_url": f"https://images.nasa.gov/details/{quote(nid)}" if nid else thumb,
+            "author": (meta.get("secondary_creator") or meta.get("photographer") or
+                       (f"NASA/{center}" if center else "NASA"))[:80],
+            "license": "NASA (public domain)",
+            "license_url": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+            "width": None, "height": None,
+            "source": "nasa", "ai_generated": False,
+        })
+    return out
+
+
+def search(query: str, *, commons=None, pexels=None, pixabay=None, nasa=None) -> list[dict]:
+    """위키미디어 → NASA → Pexels → Pixabay 순. 한쪽이 실패해도 다른 쪽 결과는 쓴다.
     모두 실패하면 마지막 오류를 올려 경고에 남긴다."""
     results, errors = [], []
-    for fn in (commons or search_commons, pexels or search_pexels, pixabay or search_pixabay):
+    for fn in (commons or search_commons, nasa or search_nasa, pexels or search_pexels, pixabay or search_pixabay):
         try:
             results.extend(fn(query))
         except Exception as exc:
@@ -308,9 +351,27 @@ def download(url: str, dest: Path, opener=urlopen, *, fallback_url: str | None =
     return dest
 
 
+def dhash(path: Path, size: int = 8) -> int:
+    """그림 내용 지문(차이 해시). 주소가 달라도 같은 사진(재업로드·크기만 다름)을 찾는 데 쓴다."""
+    with Image.open(path) as im:
+        g = ImageOps.exif_transpose(im).convert("L").resize((size + 1, size), Image.LANCZOS)
+    px = list(g.getdata())
+    bits = 0
+    for row in range(size):
+        for col in range(size):
+            bits = (bits << 1) | (px[row * (size + 1) + col] > px[row * (size + 1) + col + 1])
+    return bits
+
+
+def near_duplicate(h: int, others: list[int], max_bits: int = 10) -> bool:
+    return any(bin(h ^ o).count("1") <= max_bits for o in others)
+
+
 def credit_line(img: dict) -> str:
     if img.get("source") in ("pexels", "pixabay"):
         return f"{img.get('author', '')} / {SOURCE_LABEL[img['source']]}"
+    if img.get("source") == "nasa":
+        return img.get("author", "NASA") if "NASA" in img.get("author", "") else f"{img.get('author', '')} / NASA"
     return f"{img.get('author', '작자 미상')} / {img.get('license', '')}"
 
 

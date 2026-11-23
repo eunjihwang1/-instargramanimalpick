@@ -126,7 +126,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(candidates_payload())
         if path == "/api/job":
             return self.send_json(Job.state)
-        m = re.fullmatch(r"/media/([0-9a-f-]+)/((?:slide|img)_\d{2}\.jpg)", path)
+        m = re.fullmatch(r"/media/([0-9a-f-]+)/((?:slide|img)_[gk]?\d{1,2}\.jpg)", path)
         if m:
             return self.send_file(drafts.draft_dir(m.group(1)) / m.group(2))
         self.send_json({"error": "없는 주소"}, 404)

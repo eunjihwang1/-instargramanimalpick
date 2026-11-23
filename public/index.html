@@ -28,6 +28,11 @@
   .list { margin-top:20px; display:flex; flex-direction:column; gap:8px; }
   .item { display:flex; gap:10px; padding:8px; border:1px solid var(--line); border-radius:10px; cursor:pointer; background:#fff; }
   .item.active { border-color:var(--ink); }
+  .gal { display:grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap:8px; margin-top:8px; }
+  .gal-item { display:flex; flex-direction:column; gap:3px; font-size:12px; border:1px solid var(--line); border-radius:8px; padding:5px; cursor:pointer; }
+  .gal-item img { width:100%; aspect-ratio:1; object-fit:cover; border-radius:6px; }
+  .gal-item.off img { opacity:.3; }
+  .gal-item input { width:auto; }
   .cand { background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-top:10px; }
   .cand.pick { border-color: var(--accent); box-shadow: 0 0 0 2px #ffe9a6 inset; }
   .cand h4 { margin:4px 0 4px; font-size:17px; }
@@ -200,7 +205,7 @@ function renderDetail() {
     <div class="grid2">
       <div class="card"><h3>표지 제목</h3>
         <input data-i="0" data-k="headline" value="${esc(d.slides[0].headline.replace(/\n/g, "\\n"))}" ${locked ? "disabled" : ""}>
-        <div class="muted" style="margin-top:4px">줄바꿈은 \\n 으로 표시됩니다. 캐러셀 기본은 2장(1장 표지 · 2장 같은 사진)이고, 이야기의 핵심 사진을 찾으면 3장째부터 사진만 덧붙습니다.</div>
+        <div class="muted" style="margin-top:4px">줄바꿈은 \\n 으로 표시됩니다. 1장은 표지(사진+제목), 2장부터는 관련 사진 3장씩 모음입니다. 관련 사진이 3장이 안 되면 표지 사진만 한 장 더 들어갑니다.</div>
         <h3 style="margin-top:18px">설명란 (캡션)</h3>
         <div class="muted">이야기는 모두 여기에 들어갑니다. 사진 출처와 해시태그는 게시할 때 자동으로 뒤에 붙습니다.</div>
         <textarea id="caption" rows="16" style="line-height:1.6" ${locked ? "disabled" : ""}>${esc(d.caption)}</textarea>
@@ -210,6 +215,12 @@ function renderDetail() {
         ${d.slides.map((sl, i) => sl.kind === "end" ? "" : `<div class="slide-edit"><div class="muted">${i === 0 ? "표지 사진" : "핵심 사진 " + i} · ${esc(sl.headline.replace(/\n/g, " "))}${sl.image ? `<br>${esc(sl.image.credit)} · <a href="${esc(sl.image.page_url)}" target="_blank">원본 보기</a>` : "<br>사진 없음 (캐러셀에서 빠짐)"}</div>
           ${sl.image && !locked ? `<label class="check"><input type="checkbox" data-rm="${i}">이 사진 빼기</label>` : ""}
           ${!sl.image && sl.removed_image && !locked ? `<button class="ghost" data-restore="${i}" style="margin-top:6px">사진 되돌리기 (${esc(sl.removed_image.credit)})</button>` : ""}</div>`).join("")}
+        ${(d.gallery || []).length ? `<h3 style="margin-top:18px">사진 모음 (2장부터, 3장씩)</h3>
+          <div class="muted">체크한 사진만 들어갑니다. 3장 단위로 쓰이고 남는 사진은 빠집니다.</div>
+          <div class="gal">${d.gallery.map((g, j) => `<label class="gal-item ${g.hidden ? "off" : ""}">
+            <img src="/media/${d.id}/${esc(g.file)}?v=${encodeURIComponent(d.updated_at || "")}" alt="">
+            <span><input type="checkbox" data-gal="${j}" ${g.hidden ? "" : "checked"} ${locked ? "disabled" : ""}> 넣기</span>
+            <span class="muted">${esc(g.credit)} · <a href="${esc(g.page_url)}" target="_blank">원본</a></span></label>`).join("")}</div>` : ""}
         <div class="row" style="margin-top:12px"><button class="ghost" id="save" ${locked ? "disabled" : ""}>수정 반영 + 다시 그리기</button></div>
       </div>
       <div>
@@ -256,7 +267,8 @@ function renderDetail() {
       if (i === 0) s.headline = document.querySelector(`[data-i="0"][data-k="headline"]`).value.replace(/\\n/g, "\n");
       return s;
     });
-    await api("PUT", `/api/drafts/${d.id}`, { slides, caption: $("#caption").value, hashtags: $("#hashtags").value.split(/\s+/) });
+    const gallery = (d.gallery || []).map((_, j) => ({ hidden: !document.querySelector(`[data-gal="${j}"]`)?.checked }));
+    await api("PUT", `/api/drafts/${d.id}`, { slides, gallery, caption: $("#caption").value, hashtags: $("#hashtags").value.split(/\s+/) });
     await refresh(d.id);
   }));
   $("#approve")?.addEventListener("click", () => busy("저장 중…", async () => { await api("POST", `/api/drafts/${d.id}/status`, { status: "approved", checklist: checklist() }); await refresh(d.id); }));

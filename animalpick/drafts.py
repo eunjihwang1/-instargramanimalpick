@@ -24,6 +24,7 @@ CHECKLIST = {
     "no_mislead": "제목이 과장·허위 없이 내용과 맞다",
 }
 _publish_lock = threading.Lock()
+GALLERY_MAX = 9  # 사진 모음은 최대 3장(장당 3장씩) — 표지 포함 캐러셀 최대 4장
 
 
 def draft_dir(draft_id: str) -> Path:
@@ -154,9 +155,75 @@ def attach_images(draft: dict, out_dir: Path, *, finder=images.search, downloade
                 warn(f"핵심 사진 '{slide.get('headline', '')}': {reason} → 이 사진 없이 만듦")
             else:
                 warn(f"표지: {reason} → 2장째는 글자 장으로 만듦 (나중에 직접 사진 교체 가능)")
+    # 사진 모음 (2장부터 한 장에 3장씩): 핵심 사진 다음을 '같은 주인공의 다른 사진' 으로 채운다
+    have = sum(1 for s in draft["slides"][1:] if s.get("image"))
+    need = GALLERY_MAX - have
+    gallery: list[dict] = []
+    dup_photos = 0
+    if need > 0 and subject:
+        queries = list(draft.get("gallery_queries") or []) + [subject, cover_q]
+        pool, seen_urls = [], set()
+        for qq in dict.fromkeys(x for x in queries if x):
+            for c in candidates(qq):
+                if c["page_url"] in used or c["page_url"] in seen_urls or not images.matches_photo(c, subject):
+                    continue
+                pool.append(c)
+                seen_urls.add(c["page_url"])
+        pool = ([c for c in pool if c.get("source") not in images.STOCK_SOURCES] +
+                [c for c in pool if c.get("source") in images.STOCK_SOURCES])
+        fails = 0
+        hashes = []  # 이미 쓴 사진의 그림 지문 (같은 사진이 다른 주소로 올라온 경우를 거른다)
+        for s in draft["slides"]:
+            f = (s.get("image") or {}).get("file")
+            if f and (out_dir / f).exists():
+                try:
+                    hashes.append(images.dhash(out_dir / f))
+                except Exception:
+                    pass
+        per_author: dict[str, int] = {}
+        for s in draft["slides"]:
+            a = ((s.get("image") or {}).get("author") or "").lower()
+            if a:
+                per_author[a] = per_author.get(a, 0) + 1
+        for pick in pool:
+            if len(gallery) >= need or fails >= 4:
+                break
+            # 같은 사진가의 연속 촬영(거의 같은 사진)이 몰리지 않게: 사진 사이트 1장, 위키미디어·NASA 2장까지
+            author = (pick.get("author") or "").lower()
+            cap = 1 if pick.get("source") in images.STOCK_SOURCES else 2
+            if author and author not in ("작자 미상", "nasa") and per_author.get(author, 0) >= cap:
+                continue
+            fname = f"img_g{len(gallery) + 1:02d}.jpg"
+            try:
+                if calls:
+                    pause(1.5)
+                calls += 1
+                downloader(pick["download_url"], out_dir / fname, fallback_url=pick.get("original_url"))
+            except Exception:
+                used.add(pick["page_url"])
+                fails += 1
+                continue
+            used.add(pick["page_url"])
+            try:
+                h = images.dhash(out_dir / fname)
+            except Exception:
+                h = None
+            if h is not None and images.near_duplicate(h, hashes):
+                dup_photos += 1
+                continue  # 거의 같은 사진 → 버리고 같은 파일 이름으로 다음 후보를 받는다
+            if h is not None:
+                hashes.append(h)
+            if author:
+                per_author[author] = per_author.get(author, 0) + 1
+            gallery.append({**pick, "file": fname, "credit": images.credit_line(pick), "hidden": False})
+        if have + len(gallery) < 3:
+            warn("관련 사진이 3장이 안 돼 사진 모음 없이 2장(표지 + 같은 사진)으로 만듦")
+        if dup_photos:
+            warn(f"같은 사진이 다른 주소로 올라온 {dup_photos}장을 빼고 다른 사진으로 채웠습니다")
+    draft["gallery"] = gallery
     if dropped:
-        warn(f"'{subject}' 와 태그가 맞지 않는 사진 사이트 사진 {dropped}장을 걸러냈습니다 (다른 동물일 수 있음)")
-    stock = [s for s in draft["slides"] if (s.get("image") or {}).get("source") in images.STOCK_SOURCES]
+        warn(f"'{subject}' 와 태그가 맞지 않는 사진 사이트 사진 {dropped}장을 걸러냈습니다 (다른 대상일 수 있음)")
+    stock = [i for i in render.used_images(draft) if i.get("source") in images.STOCK_SOURCES]
     if stock:
         warn(f"사진 사이트 사진 {len(stock)}장 사용: AI 로 만든 이미지가 섞여 있을 수 있습니다. "
              "'원본 보기'로 AI 생성 표시가 없는지, 실제 그 동물·장소가 맞는지 꼭 확인하세요")
@@ -203,6 +270,9 @@ def update_content(draft_id: str, patch: dict) -> dict:
             elif s.get("restore_image") and slide.get("removed_image") and not slide.get("image"):
                 if (draft_dir(draft_id) / slide["removed_image"]["file"]).exists():
                     slide["image"] = slide.pop("removed_image")
+    for i, g in enumerate(patch.get("gallery", [])):
+        if i < len(draft.get("gallery", [])) and isinstance(g, dict) and "hidden" in g:
+            draft["gallery"][i]["hidden"] = bool(g["hidden"])
     for key in ("caption",):
         if key in patch:
             draft[key] = str(patch[key])
@@ -240,7 +310,7 @@ def set_schedule(draft_id: str, when: str | None) -> dict:
 
 def full_caption(draft: dict) -> str:
     parts = [draft.get("caption", "").strip()]
-    photo_credit = images.credits_by_source(draft["slides"])
+    photo_credit = images.credits_by_source([{"image": i} for i in render.used_images(draft)])
     if photo_credit:
         parts.append(photo_credit)
     if draft.get("hashtags"):

@@ -212,15 +212,69 @@ def caption_preview(draft: dict) -> dict:
             "body": " ".join(paras[1:3])}
 
 
+COLLAGE_GAP = 6
+
+
+def render_collage(photos: list[tuple[str, str]]) -> Image.Image:
+    """관련 사진 3장 모음 (2026-11-23 사용자 레퍼런스): 위 큰 사진 1 + 아래 작은 사진 2, 글자 없음.
+    photos = [(파일 경로, 저작자 표기)] 3개. 칸마다 오른쪽 아래 작은 저작자 표기."""
+    canvas = Image.new("RGB", (W, H), (255, 255, 255))
+    top_h = (H - COLLAGE_GAP) // 2
+    half_w = (W - COLLAGE_GAP) // 2
+    boxes = [(0, 0, W, top_h),
+             (0, top_h + COLLAGE_GAP, half_w, H),
+             (half_w + COLLAGE_GAP, top_h + COLLAGE_GAP, W, H)]
+    d = ImageDraw.Draw(canvas)
+    f = font(18)
+    for (path, credit_text), (x0, y0, x1, y1) in zip(photos, boxes):
+        img = load_photo(path, (x1 - x0, y1 - y0))
+        if img:
+            canvas.paste(img, (x0, y0))
+        if credit_text:
+            w = f.getlength(credit_text)
+            tx, ty = max(x0 + 8, x1 - 12 - w), y1 - 30
+            d.text((tx + 1, ty + 1), credit_text, font=f, fill=(0, 0, 0))
+            d.text((tx, ty), credit_text, font=f, fill=(235, 235, 235))
+    return canvas
+
+
+def collage_photos(draft: dict) -> list[dict]:
+    """사진 모음에 들어갈 사진: 핵심 장면 사진 먼저, 그다음 사진 모음(뺀 것 제외). 3장 단위로 자른다."""
+    keys = [s["image"] for s in draft["slides"][1:] if s.get("kind") == "key" and s.get("image")]
+    extra = [g for g in draft.get("gallery") or [] if not g.get("hidden")]
+    photos = (keys + extra)[:9]
+    return photos[: len(photos) // 3 * 3]
+
+
 def plan_pages(draft: dict) -> list[tuple]:
-    """캐러셀 기본 2장: 표지(제목) → 표지 사진(제목 없이). 설명은 전부 캡션.
-    이야기의 핵심 장면 사진(kind 'key')을 찾았으면 글자 없는 사진 장으로 뒤에 덧붙인다.
+    """1장 표지(사진+제목) → 2장부터 관련 사진 3장 모음(최대 3장).
+    관련 사진이 3장이 안 되면 예전 방식: 표지 사진(제목 없이) + 핵심 사진을 한 장씩.
     표지 사진이 없으면 2장째를 캡션 요약 글자 장으로 채운다 (캐러셀은 최소 2장)."""
     cover = draft["slides"][0]
+    photos = collage_photos(draft)
+    if photos:
+        return [("cover", cover)] + [("collage", photos[i:i + 3]) for i in range(0, len(photos), 3)]
     keys = [("photo", s) for s in draft["slides"][1:] if s.get("kind") == "key" and s.get("image")]
     if cover.get("image"):
         return ([("cover", cover), ("photo", cover)] + keys)[:10]
     return ([("cover", cover)] + (keys or [("text", caption_preview(draft))]))[:10]
+
+
+def used_images(draft: dict) -> list[dict]:
+    """실제 캐러셀에 들어가는 사진 정보 (캡션 저작자 표기·AI 확인 경고에 쓴다)."""
+    out = []
+    for kind, item in plan_pages(draft):
+        if kind == "collage":
+            out.extend(item)
+        elif kind in ("cover", "photo") and item.get("image"):
+            out.append(item["image"])
+    seen, uniq = set(), []
+    for i in out:
+        key = i.get("page_url") or i.get("file")
+        if key not in seen:
+            seen.add(key)
+            uniq.append(i)
+    return uniq
 
 
 def render_draft(draft: dict, out_dir: Path) -> list[Path]:
@@ -231,6 +285,12 @@ def render_draft(draft: dict, out_dir: Path) -> list[Path]:
     pages = plan_pages(draft)
     paths = []
     for i, (kind, slide) in enumerate(pages, 1):
+        if kind == "collage":
+            img = render_collage([(str(out_dir / p["file"]), p.get("credit", "")) for p in slide])
+            path = out_dir / f"slide_{i:02d}.jpg"
+            img.convert("RGB").save(path, "JPEG", quality=92, optimize=True)
+            paths.append(path)
+            continue
         image = slide.get("image") or {}
         photo = str(out_dir / image["file"]) if image.get("file") else None
         credit_text = image.get("credit", "")
