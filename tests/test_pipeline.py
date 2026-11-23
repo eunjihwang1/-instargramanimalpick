@@ -342,7 +342,7 @@ class PixabayTests(unittest.TestCase):
 
     def test_combined_three_sources(self):
         c, p, x = [{"page_url": "c"}], [{"page_url": "p"}], [{"page_url": "x"}]
-        self.assertEqual(images.search("q", commons=lambda q: c, pexels=lambda q: p, pixabay=lambda q: x, nasa=lambda q: []), c + p + x)
+        self.assertEqual(images.search("q", commons=lambda q: c, pexels=lambda q: p, pixabay=lambda q: x, nasa=lambda q: [{"page_url": "n"}]), c + p + x + [{"page_url": "n"}])  # NASA 는 맨 뒤
 
 
 class SubjectFilterTests(TempDataMixin, unittest.TestCase):

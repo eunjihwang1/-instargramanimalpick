@@ -215,7 +215,16 @@ def caption_preview(draft: dict) -> dict:
 COLLAGE_GAP = 6
 
 
-def render_collage(photos: list[tuple[str, str]]) -> Image.Image:
+def number_badge(d, x: int, y: int, n: int):
+    """모음형 사진 왼쪽 위 작은 번호 (①②③ 대신 원 안 숫자, 글꼴과 상관없이 또렷하게)."""
+    r = 26
+    d.ellipse([x, y, x + 2 * r, y + 2 * r], fill=(255, 255, 255))
+    f = font(30, True)
+    t = str(n)
+    d.text((x + r - f.getlength(t) / 2, y + r - 20), t, font=f, fill=INK)
+
+
+def render_collage(photos: list[tuple[str, str]], numbers: list[int] | None = None) -> Image.Image:
     """관련 사진 3장 모음 (2026-11-23 사용자 레퍼런스): 위 큰 사진 1 + 아래 작은 사진 2, 글자 없음.
     photos = [(파일 경로, 저작자 표기)] 3개. 칸마다 오른쪽 아래 작은 저작자 표기."""
     canvas = Image.new("RGB", (W, H), (255, 255, 255))
@@ -235,11 +244,22 @@ def render_collage(photos: list[tuple[str, str]]) -> Image.Image:
             tx, ty = max(x0 + 8, x1 - 12 - w), y1 - 30
             d.text((tx + 1, ty + 1), credit_text, font=f, fill=(0, 0, 0))
             d.text((tx, ty), credit_text, font=f, fill=(235, 235, 235))
+    for n, (x0, y0, _, _) in zip(numbers or [], boxes):
+        number_badge(d, x0 + 18, y0 + 18, n)
     return canvas
 
 
+def list_shown_items(draft: dict) -> list[dict]:
+    """모음형: 사진이 있고 빼지 않은 항목을 순서대로, 3개 단위(최대 9개)로 자른다. 이 순서가 사진 번호."""
+    items = [it for it in draft.get("items") or [] if it.get("image") and not it.get("hidden")][:9]
+    return items[: len(items) // 3 * 3]
+
+
 def collage_photos(draft: dict) -> list[dict]:
-    """사진 모음에 들어갈 사진: 핵심 장면 사진 먼저, 그다음 사진 모음(뺀 것 제외). 3장 단위로 자른다."""
+    """사진 모음에 들어갈 사진: 핵심 장면 사진 먼저, 그다음 사진 모음(뺀 것 제외). 3장 단위로 자른다.
+    모음형은 항목 사진 (번호 순)."""
+    if draft.get("format") == "list":
+        return [it["image"] for it in list_shown_items(draft)]
     keys = [s["image"] for s in draft["slides"][1:] if s.get("kind") == "key" and s.get("image")]
     extra = [g for g in draft.get("gallery") or [] if not g.get("hidden")]
     photos = (keys + extra)[:9]
@@ -286,7 +306,11 @@ def render_draft(draft: dict, out_dir: Path) -> list[Path]:
     paths = []
     for i, (kind, slide) in enumerate(pages, 1):
         if kind == "collage":
-            img = render_collage([(str(out_dir / p["file"]), p.get("credit", "")) for p in slide])
+            nums = None
+            if draft.get("format") == "list":
+                start = sum(len(x) for k, x in pages[1:i - 1] if k == "collage")
+                nums = list(range(start + 1, start + 1 + len(slide)))
+            img = render_collage([(str(out_dir / p["file"]), p.get("credit", "")) for p in slide], nums)
             path = out_dir / f"slide_{i:02d}.jpg"
             img.convert("RGB").save(path, "JPEG", quality=92, optimize=True)
             paths.append(path)

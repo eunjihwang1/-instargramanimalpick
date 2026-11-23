@@ -256,9 +256,27 @@ def has_subject(item: dict, subject: str) -> bool:
     return bool(re.search(phrase, title))
 
 
+# 이름은 맞아도 볼거리가 없는 사진 (2026-11-23 우유니 소금사막에 '리튬 추출 시설' 위성사진이 붙음)
+DULL_WORDS = {"map", "diagram", "chart", "graph", "logo", "facility", "extraction", "factory", "poster",
+              "infographic", "plan", "schematic", "stamp", "coin", "banknote", "signage",
+              # 위성·관측 자료 이미지 (다르바자에 날짜 글자 박힌 NOAA 위성 비교 사진이 붙음)
+              "satellite", "imagery", "landsat", "modis", "viirs", "jpss", "sentinel", "radar", "thermal",
+              "noaa", "nesdis", "cira", "goes", "comparison"}
+
+
+def by_preference(pool: list[dict]) -> list[dict]:
+    """사진 고르는 순서: 위키미디어(출처 분명한 실제 사진) → 사진 사이트 → NASA(위성·관측 자료가 많음)."""
+    rank = {"wikimedia_commons": 0, "pexels": 1, "pixabay": 1, "nasa": 2}
+    return sorted(pool, key=lambda c: rank.get(c.get("source"), 1))
+
+
+def is_dull(item: dict) -> bool:
+    return bool(_words(item.get("title", "")) & DULL_WORDS)
+
+
 def matches_photo(item: dict, subject: str) -> bool:
-    """사진 모음용: 불편한 사진·AI 그림이 아니고 주인공 이름이 확인되는 사진."""
-    return not is_sensitive(item) and not is_artwork(item) and has_subject(item, subject)
+    """사진 모음·모음형 항목용: 불편한 사진·AI 그림·볼거리 없는 사진이 아니고 주인공 이름이 확인되는 사진."""
+    return not is_sensitive(item) and not is_artwork(item) and not is_dull(item) and has_subject(item, subject)
 
 
 def matches_key(item: dict, must_match: list[str], subject: str) -> bool:
@@ -308,10 +326,11 @@ def search_nasa(query: str, *, limit: int = 15, opener=urlopen) -> list[dict]:
 
 
 def search(query: str, *, commons=None, pexels=None, pixabay=None, nasa=None) -> list[dict]:
-    """위키미디어 → NASA → Pexels → Pixabay 순. 한쪽이 실패해도 다른 쪽 결과는 쓴다.
+    """위키미디어 → Pexels → Pixabay → NASA 순. 한쪽이 실패해도 다른 쪽 결과는 쓴다.
+    NASA 는 위성·관측 자료가 많아 맨 뒤 (우주 사진은 위키미디어에도 NASA 사진이 많다).
     모두 실패하면 마지막 오류를 올려 경고에 남긴다."""
     results, errors = [], []
-    for fn in (commons or search_commons, nasa or search_nasa, pexels or search_pexels, pixabay or search_pixabay):
+    for fn in (commons or search_commons, pexels or search_pexels, pixabay or search_pixabay, nasa or search_nasa):
         try:
             results.extend(fn(query))
         except Exception as exc:

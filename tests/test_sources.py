@@ -115,6 +115,36 @@ def make_item(i, kind="news_intl", subject=None, title=None):
             "id": sources.cand_id(f"https://ex.com/{i}"), "title_key": sources.title_key(t)}
 
 
+class ListCandidateTests(unittest.TestCase):
+    def test_evergreen_list_theme_and_draft_routing(self):
+        def asker(system, prompt):
+            return json.dumps({"items": [
+                {"format": "list", "subject": "", "wiki_title": "", "angle": "지구에 실제로 있는 '외계 행성 같은' 장소"},
+                {"format": "story", "subject": "Axolotl", "wiki_title": "Axolotl", "angle": "재생"}]})
+
+        def fetch(url, headers=None):
+            return json.dumps({"type": "standard", "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Axolotl"}}}).encode()
+        got = sources.collect_evergreen(2, [], asker=asker, fetch=fetch, log=lambda m: None)
+        self.assertEqual([g["format"] for g in got], ["list", "story"])
+        self.assertTrue(got[0]["link"].startswith("list:"))
+
+        calls = []
+
+        def create(topic, link, text, fmt="story"):
+            calls.append((topic, link, fmt))
+            return {"id": "20261123-000000-abcdef"}
+        with tempfile.TemporaryDirectory() as tmp:
+            conn = db.connect(Path(tmp) / "t.db")
+            c = {**got[0], "id": "abcabcabcabc", "title_key": "x", "status": "new", "score": 30, "photos": 5,
+                 "subject": "", "scores": {}, "ko_title": "외계 행성 같은 장소 6곳"}
+            sources.save(conn, [c])
+            row = sources.rows(conn, "id = ?", (c["id"],))[0]
+            self.assertEqual(row["format"], "list")
+            sources.make_drafts([row], conn=conn, create=create, log=lambda m: None)
+            conn.close()
+        self.assertEqual(calls, [("지구에 실제로 있는 '외계 행성 같은' 장소", "", "list")])
+
+
 class ScoreTests(unittest.TestCase):
     def test_score_exclude_and_event_photo(self):
         items = [make_item(0), make_item(1), make_item(2)]

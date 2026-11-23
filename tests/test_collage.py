@@ -127,6 +127,24 @@ class GalleryFlowTests(unittest.TestCase):
         self.assertEqual(authors.count("Mathias Appel"), 2)  # 표지 포함 위키미디어 같은 사진가 2장까지
         self.assertEqual(authors.count("Pexels"), 1)          # 사진 사이트 같은 사진가 1장까지
 
+    def test_cover_failed_promotes_gallery_photo(self):
+        def downloader(url, dest, fallback_url=None):
+            if url.endswith("red panda0.jpg") or url.endswith("red panda1.jpg") or url.endswith("red panda2.jpg"):
+                raise RuntimeError("429")  # 표지 검색어(red panda) 결과는 전부 실패
+            return fake_downloader(url, dest)
+        data = {**AI_JSON, "image_subject": "red panda", "gallery_queries": ["red panda eating", "red panda cub"]}
+        write = lambda t, u, s: writer.normalize(data, has_source=True)
+        d = drafts.create("판다5", "", "", write=write, finder=self.finder, downloader=downloader, pause=lambda s: None)
+        self.assertIsNotNone(d["slides"][0]["image"])
+        self.assertTrue(any("첫 사진을 표지로" in w for w in d["warnings"]))
+        self.assertNotIn(d["slides"][0]["image"]["page_url"], [g["page_url"] for g in d["gallery"]])
+
+    def test_dull_photos_excluded(self):
+        self.assertFalse(images.matches_photo(
+            {"source": "nasa", "title": "A lithium extraction facility in Bolivia's Salar de Uyuni"}, "Salar de Uyuni"))
+        self.assertTrue(images.matches_photo(
+            {"source": "wikimedia_commons", "title": "File:Salar de Uyuni reflection.jpg"}, "Salar de Uyuni"))
+
     def test_gallery_hide_and_restore(self):
         data = {**AI_JSON, "image_subject": "red panda", "gallery_queries": ["red panda eating"]}
         write = lambda t, u, s: writer.normalize(data, has_source=True)

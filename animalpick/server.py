@@ -126,7 +126,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(candidates_payload())
         if path == "/api/job":
             return self.send_json(Job.state)
-        m = re.fullmatch(r"/media/([0-9a-f-]+)/((?:slide|img)_[gk]?\d{1,2}\.jpg)", path)
+        m = re.fullmatch(r"/media/([0-9a-f-]+)/((?:slide|img)_[gki]?\d{1,2}\.jpg)", path)
         if m:
             return self.send_file(drafts.draft_dir(m.group(1)) / m.group(2))
         self.send_json({"error": "없는 주소"}, 404)
@@ -147,7 +147,8 @@ class Handler(BaseHTTPRequestHandler):
             data = self.body()
             if method == "POST" and path == "/api/drafts":
                 return self.send_json(drafts.create(data.get("topic", ""), data.get("source_url", ""),
-                                                    data.get("source_text", "")))
+                                                    data.get("source_text", ""),
+                                                    fmt="list" if data.get("format") == "list" else "story"))
             if method == "POST" and path == "/api/setup-token":
                 return self.send_json({"lines": token_setup.run()})
             if method == "POST" and path in ("/api/candidates/collect", "/api/candidates/auto-draft"):

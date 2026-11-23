@@ -129,8 +129,7 @@ def attach_images(draft: dict, out_dir: Path, *, finder=images.search, downloade
             # 위키미디어(출처·촬영 정보가 분명한 실제 사진)를 먼저, 사진 사이트(AI 이미지가 섞여 있음)는 나중에.
             allc = [c for c in candidates(q) + candidates(cover_q) + (candidates(subject) if subject else [])
                     if c["page_url"] not in used]
-            pool = ([c for c in allc if c.get("source") not in images.STOCK_SOURCES] +
-                    [c for c in allc if c.get("source") in images.STOCK_SOURCES])
+            pool = images.by_preference(allc)
         attached, last_err = False, None
         for pick in pool[:2]:  # 받기 실패하면 다음 후보 하나 더
             if pick.get("original_bytes") and pick["original_bytes"] > images.MAX_BYTES:
@@ -169,8 +168,7 @@ def attach_images(draft: dict, out_dir: Path, *, finder=images.search, downloade
                     continue
                 pool.append(c)
                 seen_urls.add(c["page_url"])
-        pool = ([c for c in pool if c.get("source") not in images.STOCK_SOURCES] +
-                [c for c in pool if c.get("source") in images.STOCK_SOURCES])
+        pool = images.by_preference(pool)
         fails = 0
         hashes = []  # 이미 쓴 사진의 그림 지문 (같은 사진이 다른 주소로 올라온 경우를 거른다)
         for s in draft["slides"]:
@@ -220,6 +218,11 @@ def attach_images(draft: dict, out_dir: Path, *, finder=images.search, downloade
             warn("관련 사진이 3장이 안 돼 사진 모음 없이 2장(표지 + 같은 사진)으로 만듦")
         if dup_photos:
             warn(f"같은 사진이 다른 주소로 올라온 {dup_photos}장을 빼고 다른 사진으로 채웠습니다")
+    cover = draft["slides"][0] if draft["slides"] else {}
+    if cover and not cover.get("image") and gallery:
+        # 표지 사진만 못 받았을 때(429 등): 모음의 첫 사진을 표지로 올린다
+        cover["image"] = {k: v for k, v in gallery.pop(0).items() if k != "hidden"}
+        warn("표지 사진을 받지 못해 사진 모음의 첫 사진을 표지로 썼습니다")
     draft["gallery"] = gallery
     if dropped:
         warn(f"'{subject}' 와 태그가 맞지 않는 사진 사이트 사진 {dropped}장을 걸러냈습니다 (다른 대상일 수 있음)")
@@ -229,11 +232,80 @@ def attach_images(draft: dict, out_dir: Path, *, finder=images.search, downloade
              "'원본 보기'로 AI 생성 표시가 없는지, 실제 그 동물·장소가 맞는지 꼭 확인하세요")
 
 
-def create(topic: str, source_url: str = "", source_text: str = "", *, write=writer.write_draft,
-           finder=images.search, downloader=images.download, pause=time.sleep) -> dict:
+def attach_list_images(draft: dict, out_dir: Path, *, finder=images.search, downloader=images.download,
+                       pause=time.sleep) -> None:
+    """모음형: 항목마다 그 대상이 맞는 사진 1장 (주인공 이름 확인·AI 그림 제외·위키미디어 우선).
+    표지는 첫 항목의 '다른' 사진을 우선 쓴다 (모음의 ①과 겹치지 않게)."""
+    warn = draft.setdefault("warnings", []).append
+    used: set[str] = set()
+    calls = 0
+    hashes: list[int] = []
+    per_item_pool: list[list] = []
+    for it in draft.get("items", []):
+        try:
+            found = finder(it["image_query"]) + (finder(it["image_subject"]) if it["image_subject"] != it["image_query"] else [])
+        except Exception as exc:
+            warn(f"'{it['name_ko']}' 사진 검색 실패: {exc}")
+            found = []
+        ok = [c for c in found if images.matches_photo(c, it["image_subject"])]
+        ok = images.by_preference(ok)
+        per_item_pool.append(list({c["page_url"]: c for c in ok}.values()))
+
+    def fetch_one(pool, fname):
+        nonlocal calls
+        for pick in pool:
+            if pick["page_url"] in used:
+                continue
+            try:
+                if calls:
+                    pause(1.5)
+                calls += 1
+                downloader(pick["download_url"], out_dir / fname, fallback_url=pick.get("original_url"))
+            except Exception:
+                used.add(pick["page_url"])
+                continue
+            used.add(pick["page_url"])
+            try:
+                h = images.dhash(out_dir / fname)
+            except Exception:
+                h = None
+            if h is not None and images.near_duplicate(h, hashes):
+                continue
+            if h is not None:
+                hashes.append(h)
+            return {**pick, "file": fname, "credit": images.credit_line(pick)}
+        return None
+
+    for n, (it, pool) in enumerate(zip(draft.get("items", []), per_item_pool), 1):
+        it["image"] = fetch_one(pool[:3], f"img_i{n:02d}.jpg")
+        if not it["image"]:
+            warn(f"'{it['name_ko']}': 맞는 사진을 찾지 못해 모음에서 뺍니다")
+    cover = draft["slides"][0]
+    # 표지: 사진을 찾은 첫 항목의 '다른' 사진 → 없으면 그 항목 사진 그대로
+    first = next((k for k, it in enumerate(draft.get("items", [])) if it.get("image")), None)
+    if first is None:
+        cover["image"] = None
+    else:
+        cover["image"] = fetch_one(per_item_pool[first], "img_01.jpg") or dict(draft["items"][first]["image"])
+    stock = [i for i in render.used_images(draft) if i.get("source") in images.STOCK_SOURCES]
+    if stock:
+        warn(f"사진 사이트 사진 {len(stock)}장 사용: AI 로 만든 이미지가 섞여 있을 수 있습니다. "
+             "'원본 보기'로 AI 생성 표시가 없는지, 실제 그 대상이 맞는지 꼭 확인하세요")
+
+
+def refresh_list_caption(draft: dict) -> None:
+    """모음형 캡션은 실제로 들어간 항목 순서(사진 번호)대로 다시 만든다."""
+    if draft.get("format") == "list":
+        draft["caption"] = writer.compose_list_caption(draft, render.list_shown_items(draft))
+
+
+def create(topic: str, source_url: str = "", source_text: str = "", *, write=None,
+           finder=images.search, downloader=images.download, pause=time.sleep, fmt: str = "story") -> dict:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     draft_id = f"{stamp}-{hashlib.sha1((topic + source_url + stamp).encode()).hexdigest()[:6]}"
     dup = find_duplicate(topic, source_url)
+    if write is None:
+        write = (lambda t, u, s: writer.write_list_draft(t)) if fmt == "list" else writer.write_draft
     content = write(topic, source_url, source_text)
     draft = {
         "id": draft_id, "status": "draft", "created_at": now(),
@@ -248,7 +320,11 @@ def create(topic: str, source_url: str = "", source_text: str = "", *, write=wri
         draft["warnings"].append(f"비슷한 원고가 이미 있습니다: {dup}")
     out = draft_dir(draft_id)
     out.mkdir(parents=True, exist_ok=True)
-    attach_images(draft, out, finder=finder, downloader=downloader, pause=pause)
+    if draft.get("format") == "list":
+        attach_list_images(draft, out, finder=finder, downloader=downloader, pause=pause)
+        refresh_list_caption(draft)
+    else:
+        attach_images(draft, out, finder=finder, downloader=downloader, pause=pause)
     draft["slide_files"] = [p.name for p in render.render_draft(draft, out)]
     return save(draft)
 
@@ -273,11 +349,22 @@ def update_content(draft_id: str, patch: dict) -> dict:
     for i, g in enumerate(patch.get("gallery", [])):
         if i < len(draft.get("gallery", [])) and isinstance(g, dict) and "hidden" in g:
             draft["gallery"][i]["hidden"] = bool(g["hidden"])
+    items_changed = False
+    for i, it in enumerate(patch.get("items", [])):
+        if i < len(draft.get("items", [])) and isinstance(it, dict):
+            if "hidden" in it and bool(it["hidden"]) != bool(draft["items"][i].get("hidden")):
+                draft["items"][i]["hidden"] = bool(it["hidden"])
+                items_changed = True
+            if "fact" in it and str(it["fact"]).strip() != draft["items"][i]["fact"]:
+                draft["items"][i]["fact"] = str(it["fact"]).strip()
+                items_changed = True
     for key in ("caption",):
         if key in patch:
             draft[key] = str(patch[key])
     if "hashtags" in patch:
         draft["hashtags"] = [re.sub(r"[#\s]", "", t) for t in patch["hashtags"] if str(t).strip()][:10]
+    if items_changed:
+        refresh_list_caption(draft)  # 항목을 넣고 빼면 번호가 바뀌므로 캡션 목록을 다시 만든다
     draft["status"] = "draft"  # 수정하면 다시 검수
     draft["history"].append({"at": now(), "event": "edited"})
     draft["slide_files"] = [p.name for p in render.render_draft(draft, draft_dir(draft_id))]

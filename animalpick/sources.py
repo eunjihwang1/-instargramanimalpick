@@ -207,7 +207,12 @@ EVERGREEN_SYSTEM = """너는 한국어 인스타그램 매거진 '애니멀픽'�
 동물, 자연현상(오로라·싱크홀 등), 우주, 신기한 장소·건축, 발명·기술·로봇, 세계의 별난 문화·축제·음식, 역사 속 미스터리.
 조건: 실제로 영어 위키백과에 문서가 있는 주제, 한 가지 놀라운 사실로 이야기가 되는 것, 사진(자료 사진)이 흔한 주제,
 잔혹·질병·정치·성적인 소재와 실존 개인이 주인공인 이야기 제외, [이미 다룬 주제] 목록과 겹치지 않을 것.
-JSON 하나만: {"items":[{"subject":"영어 이름(동물·사물·장소·현상)","wiki_title":"영어 위키백과 문서 제목","angle":"한국어 한 줄 관점"}]}"""
+두 가지 형식을 섞어 제안한다 (모음형을 절반 이상):
+- format "list" (모음형): 주제 하나 + 서로 다른 놀라운 대상 6~9개를 사진으로 보여 주는 기획.
+  레퍼런스에서 가장 크게 터진 형식이다. 예) 기술이 발전하며 사라진 직업들의 실제 사진 / 지구에 실제로 있는 '외계 행성 같은' 장소.
+  angle 에 주제를 쓰고, subject 는 "", wiki_title 은 "" (항목은 원고를 쓸 때 따로 확인한다).
+- format "story" (한 가지 이야기): 한 대상의 가장 놀라운 한 가지 사실. subject·wiki_title 필수.
+JSON 하나만: {"items":[{"format":"list|story","subject":"영어 이름","wiki_title":"영어 위키백과 문서 제목","angle":"한국어 한 줄 주제·관점"}]}"""
 
 
 def wiki_exists(title: str, *, fetch=_get) -> str | None:
@@ -233,6 +238,13 @@ def collect_evergreen(n: int, used_subjects: list[str], *, asker=claude.ask, fet
     used = {s.lower() for s in used_subjects}
     out = []
     for it in data.get("items", []):
+        if str(it.get("format", "")).lower() == "list" and str(it.get("angle", "")).strip():
+            theme = str(it["angle"]).strip()
+            out.append({"kind": "evergreen", "source": "상시 소재 (모음형 기획)", "title": theme,
+                        "link": "list:" + theme, "published_at": None, "format": "list"})
+            if len(out) >= n:
+                break
+            continue
         subj, wt = str(it.get("subject", "")).strip(), str(it.get("wiki_title", "")).strip()
         if not subj or not wt or subj.lower() in used:
             continue
@@ -241,7 +253,7 @@ def collect_evergreen(n: int, used_subjects: list[str], *, asker=claude.ask, fet
             continue
         out.append({"kind": "evergreen", "source": "상시 소재 (위키백과)",
                     "title": f"{subj}: {it.get('angle', '')}".strip(), "link": url, "published_at": None,
-                    "subject_hint": subj})
+                    "subject_hint": subj, "format": "story"})
         if len(out) >= n:
             break
     log(f"  상시 소재: {len(out)}개 (위키백과 문서 확인)")
@@ -278,6 +290,11 @@ exclude=true: 성적인 소재, 범죄·사고·재난의 피해자나 실존 �
   잔혹·사체·학대, 의료·건강·다이어트 주장, 기업 실적·주식·제품 광고·출시, 연예인 가십,
   칼럼·퀴즈·행사·행정 소식, 목록 안 중복.
 category: animal / science / space / nature / tech / world / culture / food / history 중 하나.
+레퍼런스 계정 반응 데이터(2026-11-23) 기준으로 점수를 매긴다:
+  높게 — 상황이 눈앞에 그려지는 순간(예: 고양이가 거꾸로 매달려 있었다), 귀여움·웃김·경이로운 장면,
+         여러 놀라운 대상을 모아 보여 주는 모음 주제(source 가 '모음형 기획'), 일상과 연결되는 기술 변화.
+  낮게 — 교과서·사전식 과학 사실, 기관 발표·장비·시설 소식, 한 줄로 끝나는 밋밋한 발견.
+모음형 기획 후보는 needs_event_photo=false 이고, subject 는 대표 대상 하나의 영어 이름을 쓴다.
 subject: 주인공(동물·사물·장소·현상)의 영어 이름. photo_query: 그 주인공 사진 검색어(영어 2~4단어).
 ko_title: 표지 제목 초안(22자 이내, 명사형 또는 합니다체, '-다'로 끝내지 않음).
 JSON 하나만: {"items":[{"i":번호,"exclude":false,"needs_event_photo":false,"reason":"한 줄 평 또는 제외 이유",
@@ -362,11 +379,12 @@ def save(conn, items: list[dict]) -> int:
         conn.execute(
             """INSERT OR IGNORE INTO candidates
                (id, kind, source, title, title_key, link, published_at, collected_at, ko_title, subject, photo_query,
-                scores, score, photos, status, reason, category)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                scores, score, photos, status, reason, category, format)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (it["id"], it["kind"], it["source"], it["title"], it["title_key"], it["link"], it.get("published_at"), ts,
              it.get("ko_title"), it.get("subject"), it.get("photo_query"), json.dumps(it.get("scores") or {}),
-             it.get("score"), it.get("photos"), it.get("status", "new"), it.get("reason"), it.get("category")))
+             it.get("score"), it.get("photos"), it.get("status", "new"), it.get("reason"), it.get("category"),
+             it.get("format", "story")))
     conn.commit()
     return len(items)
 
@@ -476,10 +494,13 @@ def make_drafts(cands: list[dict], *, conn=None, create=None, log=print) -> list
     try:
         for c in cands:
             topic = c.get("ko_title") or c["title"]
-            if c.get("subject"):
-                topic = f"{topic} (주인공: {c['subject']} / 원제: {c['title']})"
             try:
-                d = create(topic, c["link"], "")
+                if c.get("format") == "list":
+                    d = create(c["title"], "", "", fmt="list")
+                else:
+                    if c.get("subject"):
+                        topic = f"{topic} (주인공: {c['subject']} / 원제: {c['title']})"
+                    d = create(topic, c["link"], "")
             except Exception as exc:
                 log(f"  [원고 실패] {c.get('ko_title') or c['title']}: {exc}")
                 continue
